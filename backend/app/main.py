@@ -47,6 +47,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
     losgram_id: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
+    virtual_number: Mapped[str | None] = mapped_column(String(16), unique=True, index=True, nullable=True)
     telegram_user_id: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     display_name: Mapped[str] = mapped_column(String(80), default="Пользователь")
     username: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
@@ -98,6 +99,10 @@ class Message(Base):
 
 
 Base.metadata.create_all(bind=engine)
+from sqlalchemy import inspect
+if "virtual_number" not in {column["name"] for column in inspect(engine).get_columns("users")}:
+    with engine.begin() as connection:
+        connection.exec_driver_sql("ALTER TABLE users ADD COLUMN virtual_number VARCHAR(16)")
 
 
 def get_db():
@@ -145,7 +150,7 @@ class VerifyRequest(PhoneRequest):
 
 
 class TelegramVerifyRequest(BaseModel):
-    losgram_id: str = Field(min_length=10, max_length=10, pattern=r"^LG[0-9]{8}$")
+    virtual_number: str = Field(min_length=13, max_length=13, pattern=r"^\+447[0-9]{9}$")
     code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
 
 
@@ -231,15 +236,16 @@ def issue_telegram_code(db: Session, telegram_user_id: str) -> tuple[User, str]:
     user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
     if not user:
         user = User(telegram_user_id=telegram_user_id, display_name="Пользователь")
-        for _ in range(10):
-            candidate = f"LG{secrets.randbelow(100_000_000):08d}"
-            if not db.scalar(select(User.id).where(User.losgram_id == candidate)):
-                user.losgram_id = candidate
-                break
-        if not user.losgram_id:
-            raise HTTPException(status_code=503, detail="Не удалось выдать LosGram ID")
         db.add(user)
         db.flush()
+    if not user.virtual_number:
+        for _ in range(30):
+            candidate = f"+447{secrets.randbelow(1_000_000_000):09d}"
+            if not db.scalar(select(User.id).where(User.virtual_number == candidate)):
+                user.virtual_number = candidate
+                break
+        if not user.virtual_number:
+            raise HTTPException(status_code=503, detail="Не удалось выдать виртуальный номер")
     db.query(TelegramLoginCode).filter(
         TelegramLoginCode.telegram_user_id == telegram_user_id,
         TelegramLoginCode.consumed.is_(False)).update(
@@ -255,7 +261,7 @@ def issue_telegram_code(db: Session, telegram_user_id: str) -> tuple[User, str]:
 
 def send_telegram_code(chat_id: int, user: User, code: str) -> None:
     telegram_api("sendMessage", {"chat_id": chat_id, "text":
-        f"LosGram — данные для входа\\n\\nВаш виртуальный номер: {user.losgram_id}\\n"
+        f"LosGram — данные для входа\\n\\nВаш номер профиля: {user.virtual_number}\\n"
         f"Одноразовый код: {code}\\n\\nКод действует {LOGIN_CODE_TTL_MINUTES} минут. Никому его не пересылайте."})
 
 @app.get("/health")
@@ -287,7 +293,7 @@ async def telegram_webhook(update: dict[str, Any],
 
 @app.post("/auth/telegram/verify")
 def verify_telegram_code(payload: TelegramVerifyRequest, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.losgram_id == payload.losgram_id))
+    user = db.scalar(select(User).where(User.virtual_number == payload.virtual_number))
     if not user or not user.telegram_user_id:
         raise HTTPException(status_code=400, detail="Неверный LosGram ID или код")
     record = db.scalar(select(TelegramLoginCode).where(
@@ -314,7 +320,7 @@ def verify_telegram_code(payload: TelegramVerifyRequest, db: Session = Depends(g
     record.consumed = True
     db.commit()
     return {"access_token": make_token(user), "token_type": "bearer",
-            "user": {"id": user.id, "losgram_id": user.losgram_id,
+            "user": {"id": user.id, "virtual_number": user.virtual_number,
                      "display_name": user.display_name, "username": user.username}}
 
 
@@ -357,7 +363,7 @@ def verify_code(payload: VerifyRequest, db: Session = Depends(get_db)):
 
 @app.get("/me")
 def me(user: User = Depends(current_user)):
-    return {"id": user.id, "losgram_id": user.losgram_id, "phone": user.phone, "display_name": user.display_name,
+    return {"id": user.id, "losgram_id": user.losgram_id, "virtual_number": user.virtual_number, "phone": user.phone, "display_name": user.display_name,
             "username": user.username, "avatar_url": user.avatar_url}
 
 
