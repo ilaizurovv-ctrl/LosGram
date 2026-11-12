@@ -31,7 +31,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val API_BASE_URL = "https://YOUR-LOS-GRAM-SERVER.onrender.com"
+private const val API_BASE_URL = "https://losgram-api.onrender.com"
 private const val TELEGRAM_BOT_URL = "https://t.me/LosGram_Bot"
 
 private val Navy = Color(0xFF17212B)
