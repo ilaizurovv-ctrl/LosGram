@@ -291,8 +291,12 @@ fun MessengerHome(displayName: String) {
                         items(filtered) { chat -> ChatRow(chat) }
                     }
                 }
-                "Контакты" -> EmptyState("Контакты", "Здесь появятся пользователи LosGram")
-                else -> EmptyState("Звонки", "История звонков появится здесь")
+                "Контакты" -> Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    EmptyState("Контакты", "Здесь появятся пользователи LosGram")
+                }
+                else -> Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    EmptyState("Звонки", "История звонков появится здесь")
+                }
             }
 
             Row(
@@ -348,7 +352,7 @@ fun ChatRow(chat: Chat) {
 @Composable
 fun EmptyState(title: String, subtitle: String) {
     Column(
-        modifier = Modifier.fillMaxWidth().weight(1f).padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
