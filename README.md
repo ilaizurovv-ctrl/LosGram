@@ -29,3 +29,9 @@ Real accounts, backend API, persistent messages, file uploads, push notification
 - Media: S3-compatible object storage
 
 Development will proceed in small MVP stages, starting with authentication and one-to-one messaging.
+
+## Backend (new)
+
+A FastAPI + PostgreSQL backend foundation is in `backend/`. It includes phone-code authentication scaffolding, JWT sessions, user profiles/search, direct conversations, message history, and WebSocket message events.
+
+See [backend/README.md](backend/README.md) for setup and API details. The development OTP shortcut is not real SMS; production login is deliberately disabled until an SMS provider is configured. This backend is an early MVP foundation and has not yet been deployed or security-reviewed.
