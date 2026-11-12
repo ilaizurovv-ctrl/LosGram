@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 import os
 import secrets
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -20,6 +24,9 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
 OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "5"))
 DEV_OTP_CODE = os.getenv("DEV_OTP_CODE", "123456")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+LOGIN_CODE_TTL_MINUTES = int(os.getenv("LOGIN_CODE_TTL_MINUTES", "5"))
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
@@ -33,7 +40,9 @@ class Base(DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
+    losgram_id: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
+    telegram_user_id: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     display_name: Mapped[str] = mapped_column(String(80), default="Пользователь")
     username: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -47,6 +56,16 @@ class OtpCode(Base):
     code_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TelegramLoginCode(Base):
+    __tablename__ = "telegram_login_codes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_user_id: Mapped[str] = mapped_column(String(32), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed: Mapped[bool] = mapped_column(Boolean, default=False)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Conversation(Base):
@@ -120,6 +139,11 @@ class VerifyRequest(PhoneRequest):
     code: str = Field(min_length=4, max_length=8)
 
 
+class TelegramVerifyRequest(BaseModel):
+    losgram_id: str = Field(min_length=10, max_length=10, pattern=r"^LG[0-9]{8}$")
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+
 class ProfileUpdate(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
     username: str | None = Field(default=None, min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_]+$")
@@ -163,9 +187,118 @@ class ConnectionHub:
 hub = ConnectionHub()
 
 
+
+def telegram_code_hash(telegram_user_id: str, code: str) -> str:
+    return hmac.new(JWT_SECRET.encode(), f"telegram:{telegram_user_id}:{code}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def telegram_api(method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Telegram-бот ещё не настроен")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode())
+        if not result.get("ok"):
+            raise RuntimeError("Telegram API rejected request")
+        return result
+    except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError):
+        raise HTTPException(status_code=502, detail="Не удалось отправить сообщение через Telegram")
+
+
+def issue_telegram_code(db: Session, telegram_user_id: str) -> tuple[User, str]:
+    user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
+    if not user:
+        user = User(telegram_user_id=telegram_user_id, display_name="Пользователь")
+        for _ in range(10):
+            candidate = f"LG{secrets.randbelow(100_000_000):08d}"
+            if not db.scalar(select(User.id).where(User.losgram_id == candidate)):
+                user.losgram_id = candidate
+                break
+        if not user.losgram_id:
+            raise HTTPException(status_code=503, detail="Не удалось выдать LosGram ID")
+        db.add(user)
+        db.flush()
+    db.query(TelegramLoginCode).filter(
+        TelegramLoginCode.telegram_user_id == telegram_user_id,
+        TelegramLoginCode.consumed.is_(False)).update(
+            {"consumed": True}, synchronize_session=False)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    db.add(TelegramLoginCode(
+        telegram_user_id=telegram_user_id,
+        code_hash=telegram_code_hash(telegram_user_id, code),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=LOGIN_CODE_TTL_MINUTES)))
+    db.commit()
+    return user, code
+
+
+def send_telegram_code(chat_id: int, user: User, code: str) -> None:
+    telegram_api("sendMessage", {"chat_id": chat_id, "text":
+        f"LosGram — данные для входа\\n\\nВаш виртуальный номер: {user.losgram_id}\\n"
+        f"Одноразовый код: {code}\\n\\nКод действует {LOGIN_CODE_TTL_MINUTES} минут. Никому его не пересылайте."})
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "losgram-api", "version": "0.1.0"}
+
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(update: dict[str, Any],
+    secret: str | None = Header(default=None, alias="X-Telegram-Bot-Api-Secret-Token"),
+    db: Session = Depends(get_db)):
+    if not TELEGRAM_WEBHOOK_SECRET or not hmac.compare_digest(secret or "", TELEGRAM_WEBHOOK_SECRET):
+        raise HTTPException(status_code=401, detail="Недействительный webhook secret")
+    message = update.get("message") or {}
+    chat = message.get("chat") or {}
+    sender = message.get("from") or {}
+    command_text = (message.get("text") or "").strip()
+    if chat.get("type") != "private" or not sender.get("id") or not command_text.startswith("/"):
+        return {"ok": True}
+    command = command_text.split()[0].split("@")[0].lower()
+    if command not in ("/start", "/login"):
+        telegram_api("sendMessage", {"chat_id": chat["id"], "text": "Отправьте /start или /login для получения данных входа."})
+        return {"ok": True}
+    user, code = issue_telegram_code(db, str(sender["id"]))
+    send_telegram_code(int(chat["id"]), user, code)
+    return {"ok": True}
+
+
+@app.post("/auth/telegram/verify")
+def verify_telegram_code(payload: TelegramVerifyRequest, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.losgram_id == payload.losgram_id))
+    if not user or not user.telegram_user_id:
+        raise HTTPException(status_code=400, detail="Неверный LosGram ID или код")
+    record = db.scalar(select(TelegramLoginCode).where(
+        TelegramLoginCode.telegram_user_id == user.telegram_user_id,
+        TelegramLoginCode.consumed.is_(False)).order_by(TelegramLoginCode.id.desc()))
+    if not record:
+        raise HTTPException(status_code=400, detail="Код не найден. Запросите новый в Telegram-боте.")
+    if record.failed_attempts >= 5:
+        record.consumed = True
+        db.commit()
+        raise HTTPException(status_code=429, detail="Слишком много попыток. Запросите новый код.")
+    expected = telegram_code_hash(user.telegram_user_id, payload.code)
+    if not hmac.compare_digest(record.code_hash, expected):
+        record.failed_attempts += 1
+        db.commit()
+        raise HTTPException(status_code=400, detail="Неверный LosGram ID или код")
+    expires = record.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        record.consumed = True
+        db.commit()
+        raise HTTPException(status_code=400, detail="Код истёк. Запросите новый в боте.")
+    record.consumed = True
+    db.commit()
+    return {"access_token": make_token(user), "token_type": "bearer",
+            "user": {"id": user.id, "losgram_id": user.losgram_id,
+                     "display_name": user.display_name, "username": user.username}}
 
 
 @app.post("/auth/request-code")
@@ -207,7 +340,7 @@ def verify_code(payload: VerifyRequest, db: Session = Depends(get_db)):
 
 @app.get("/me")
 def me(user: User = Depends(current_user)):
-    return {"id": user.id, "phone": user.phone, "display_name": user.display_name,
+    return {"id": user.id, "losgram_id": user.losgram_id, "phone": user.phone, "display_name": user.display_name,
             "username": user.username, "avatar_url": user.avatar_url}
 
 
