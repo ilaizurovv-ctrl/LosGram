@@ -19,6 +19,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 
 APP_ENV = os.getenv("APP_ENV", "development")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./losgram.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 JWT_SECRET = os.getenv("JWT_SECRET", "local-development-secret-change-me")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
