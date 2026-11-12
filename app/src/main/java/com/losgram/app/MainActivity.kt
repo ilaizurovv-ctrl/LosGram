@@ -45,7 +45,7 @@ private val Blue = Color(0xFF3390EC)
 private val Muted = Color(0xFF8A9AA9)
 private val White = Color(0xFFF5F7FA)
 
-data class LoginSession(val token: String, val userId: Int, val displayName: String)
+data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
 data class ChatItem(val id: Int, val name: String, val message: String)
 data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean)
 
@@ -101,13 +101,13 @@ private suspend fun api(path: String, token: String? = null, method: String = "G
     }
 }
 
-private suspend fun verifyLosGramLogin(losgramId: String, code: String): LoginSession {
+private suspend fun verifyLosGramLogin(virtualNumber: String, code: String): LoginSession {
     val response = api("/auth/telegram/verify", method = "POST",
-        body = JSONObject().put("losgram_id", losgramId).put("code", code))
+        body = JSONObject().put("virtual_number", virtualNumber).put("code", code))
     val user = response.optJSONObject("user") ?: JSONObject()
     val token = response.optString("access_token")
     if (token.isBlank()) throw IllegalStateException("Сервер не вернул токен входа.")
-    return LoginSession(token, user.optInt("id"), user.optString("display_name", "Пользователь"))
+    return LoginSession(token, user.optInt("id"), user.optString("display_name", "Пользователь"), user.optString("virtual_number"))
 }
 
 @Composable
@@ -121,7 +121,7 @@ fun LosGramApp() {
         if (!saved.isNullOrBlank()) {
             try {
                 val me = api("/me", saved)
-                session = LoginSession(saved, me.optInt("id"), me.optString("display_name", "Пользователь"))
+                session = LoginSession(saved, me.optInt("id"), me.optString("display_name", "Пользователь"), me.optString("virtual_number"))
             } catch (_: Exception) {
                 clearToken(context)
             }
@@ -152,7 +152,7 @@ fun LosGramApp() {
 fun TelegramLoginScreen(onLogin: suspend (String, String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var losgramId by remember { mutableStateOf("") }
+    var virtualNumber by remember { mutableStateOf("+44") }
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -174,9 +174,9 @@ fun TelegramLoginScreen(onLogin: suspend (String, String) -> Unit) {
                 shape = RoundedCornerShape(12.dp)) { Text("Открыть @LosGram_Bot", color = Color.White) }
             Spacer(Modifier.height(22.dp))
             OutlinedTextField(value = losgramId,
-                onValueChange = { losgramId = it.uppercase().filter(Char::isLetterOrDigit).take(10); error = "" },
+                onValueChange = { virtualNumber = it.filter { ch -> ch.isDigit() || ch == '+' }.take(13); error = "" },
                 modifier = Modifier.fillMaxWidth(), label = { Text("Виртуальный номер") },
-                placeholder = { Text("LG12345678") }, singleLine = true,
+                placeholder = { Text("+447123456789") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                 shape = RoundedCornerShape(12.dp), colors = loginFieldColors())
             Spacer(Modifier.height(12.dp))
@@ -192,13 +192,13 @@ fun TelegramLoginScreen(onLogin: suspend (String, String) -> Unit) {
             }
             Spacer(Modifier.height(18.dp))
             Button(onClick = {
-                if (losgramId.length != 10 || code.length != 6) {
-                    error = "Введите номер LG и шестизначный код из бота."
+                if (!virtualNumber.matches(Regex("^\\+447[0-9]{9}$")) || code.length != 6) {
+                    error = "Введите номер профиля +44 и шестизначный код из бота."
                 } else {
                     loading = true
                     error = ""
                     scope.launch {
-                        try { onLogin(losgramId, code) }
+                        try { onLogin(virtualNumber, code) }
                         catch (e: Exception) { error = e.message ?: "Ошибка подключения к серверу." }
                         finally { loading = false }
                     }
@@ -264,7 +264,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("LosGram", color = Blue, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                    Text("Привет, ${session.displayName}", color = Muted, fontSize = 12.sp)
+                    Text("${session.displayName} · ${session.virtualNumber}", color = Muted, fontSize = 12.sp)
                 }
                 Text("Выйти", color = Muted, modifier = Modifier.clickable { onLogout() }.padding(8.dp))
             }
