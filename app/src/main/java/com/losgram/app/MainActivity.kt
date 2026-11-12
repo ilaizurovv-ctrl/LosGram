@@ -1,5 +1,7 @@
 package com.losgram.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,9 +18,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+private const val API_BASE_URL = "https://YOUR-LOS-GRAM-SERVER.onrender.com"
+private const val TELEGRAM_BOT_URL = "https://t.me/LosGram_Bot"
 
 private val Navy = Color(0xFF17212B)
 private val Panel = Color(0xFF1F2C38)
@@ -64,6 +78,160 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LosGramApp() {
+    var loggedIn by remember { mutableStateOf(false) }
+    var displayName by remember { mutableStateOf("Пользователь") }
+    if (loggedIn) {
+        MessengerHome(displayName)
+    } else {
+        TelegramLoginScreen(
+            onLogin = { id, code ->
+                val result = verifyLosGramLogin(id, code)
+                displayName = result
+                loggedIn = true
+            }
+        )
+    }
+}
+
+private suspend fun verifyLosGramLogin(losgramId: String, code: String): String =
+    withContext(Dispatchers.IO) {
+        val base = API_BASE_URL.trimEnd('/')
+        if (base.contains("YOUR-LOS-GRAM-SERVER")) {
+            throw IllegalStateException("Сервер LosGram ещё не подключён. Сначала нужно развернуть backend и указать его HTTPS-адрес.")
+        }
+        val connection = (URL("$base/auth/telegram/verify").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15000
+            readTimeout = 15000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+        }
+        try {
+            val body = JSONObject().put("losgram_id", losgramId).put("code", code).toString()
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            val response = stream.bufferedReader().use { it.readText() }
+            val json = JSONObject(response)
+            if (connection.responseCode !in 200..299) {
+                throw IllegalStateException(json.optString("detail", "Не удалось войти. Проверьте номер и код."))
+            }
+            val user = json.optJSONObject("user")
+            user?.optString("display_name")?.takeIf { it.isNotBlank() && it != "null" } ?: "Пользователь"
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+@Composable
+fun TelegramLoginScreen(onLogin: suspend (String, String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var losgramId by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = Navy) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("LosGram", color = Blue, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Вход в мессенджер", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Получите виртуальный номер и код в официальном Telegram-боте LosGram",
+                color = Muted, fontSize = 14.sp
+            )
+            Spacer(Modifier.height(22.dp))
+            Button(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_BOT_URL))
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Blue),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Открыть @LosGram_Bot", color = Color.White)
+            }
+            Spacer(Modifier.height(22.dp))
+            OutlinedTextField(
+                value = losgramId,
+                onValueChange = { losgramId = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(10); error = "" },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Виртуальный номер") },
+                placeholder = { Text("LG12345678") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                shape = RoundedCornerShape(12.dp),
+                colors = loginFieldColors()
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it.filter(Char::isDigit).take(6); error = "" },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Код из Telegram") },
+                placeholder = { Text("6 цифр") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                shape = RoundedCornerShape(12.dp),
+                colors = loginFieldColors()
+            )
+            if (error.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Button(
+                onClick = {
+                    if (losgramId.length != 10 || code.length != 6) {
+                        error = "Введите номер LG и шестизначный код из бота."
+                    } else {
+                        loading = true
+                        error = ""
+                        scope.launch {
+                            try {
+                                onLogin(losgramId, code)
+                            } catch (e: Exception) {
+                                error = e.message ?: "Ошибка подключения к серверу."
+                            } finally {
+                                loading = false
+                            }
+                        }
+                    }
+                },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Blue),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(if (loading) "Проверяем..." else "Войти", color = Color.White)
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("Без номера телефона. Код действует 5 минут.", color = Muted, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun loginFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = Blue,
+    unfocusedBorderColor = Panel,
+    focusedTextColor = White,
+    unfocusedTextColor = White,
+    focusedLabelColor = Blue,
+    unfocusedLabelColor = Muted,
+    cursorColor = Blue,
+    focusedContainerColor = Panel,
+    unfocusedContainerColor = Panel
+)
+
+@Composable
+fun MessengerHome(displayName: String) {
     var selectedTab by remember { mutableStateOf("Чаты") }
     var search by remember { mutableStateOf("") }
 
@@ -75,7 +243,7 @@ fun LosGramApp() {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("LosGram", color = Blue, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                    Text("Твой мессенджер", color = Muted, fontSize = 12.sp)
+                    Text("Привет, $displayName", color = Muted, fontSize = 12.sp)
                 }
                 Text("✎", color = White, fontSize = 25.sp, modifier = Modifier.padding(horizontal = 10.dp))
                 Text("⋮", color = White, fontSize = 27.sp)
@@ -89,13 +257,9 @@ fun LosGramApp() {
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Blue,
-                    unfocusedBorderColor = Panel,
-                    focusedTextColor = White,
-                    unfocusedTextColor = White,
-                    cursorColor = Blue,
-                    focusedContainerColor = Panel,
-                    unfocusedContainerColor = Panel
+                    focusedBorderColor = Blue, unfocusedBorderColor = Panel,
+                    focusedTextColor = White, unfocusedTextColor = White,
+                    cursorColor = Blue, focusedContainerColor = Panel, unfocusedContainerColor = Panel
                 )
             )
 
