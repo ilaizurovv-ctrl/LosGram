@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -367,8 +368,21 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     }
 
     LaunchedEffect(chat.id) {
-        try { reload() } catch (e: Exception) { error = e.message ?: "Не удалось загрузить сообщения" }
-        finally { loading = false }
+        try {
+            while (true) {
+                try {
+                    reload()
+                    error = ""
+                } catch (e: Exception) {
+                    error = e.message ?: "Не удалось загрузить сообщения"
+                } finally {
+                    loading = false
+                }
+                delay(3000)
+            }
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // Stop polling when the user leaves this conversation.
+        }
     }
 
     Surface(Modifier.fillMaxSize(), color = Navy) {
