@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select, or_
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select, or_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 APP_ENV = os.getenv("APP_ENV", "development")
@@ -116,6 +116,21 @@ with engine.begin() as connection:
     for _column, _sql_type in _user_column_types.items():
         if _column not in _user_columns:
             connection.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {_column} {_sql_type}")
+    # Legacy schema stored users.created_at as BIGINT (Unix timestamp).
+    # Convert it to timestamptz so SQLAlchemy can insert new Telegram users.
+    if engine.dialect.name == "postgresql":
+        _created_at_info = next((c for c in inspect(engine).get_columns("users") if c["name"] == "created_at"), None)
+        if _created_at_info and isinstance(_created_at_info["type"], BigInteger):
+            connection.exec_driver_sql("""
+                ALTER TABLE users
+                ALTER COLUMN created_at TYPE TIMESTAMP WITH TIME ZONE
+                USING CASE
+                    WHEN created_at IS NULL THEN NOW()
+                    WHEN ABS(created_at) >= 100000000000
+                        THEN to_timestamp(created_at / 1000.0)
+                    ELSE to_timestamp(created_at)
+                END
+            """)
     for _column in ("losgram_id", "telegram_user_id", "username", "virtual_number"):
         connection.exec_driver_sql(
             f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_{_column} ON users ({_column})"
