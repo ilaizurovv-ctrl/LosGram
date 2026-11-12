@@ -100,9 +100,26 @@ class Message(Base):
 
 Base.metadata.create_all(bind=engine)
 from sqlalchemy import inspect
-if "virtual_number" not in {column["name"] for column in inspect(engine).get_columns("users")}:
-    with engine.begin() as connection:
-        connection.exec_driver_sql("ALTER TABLE users ADD COLUMN virtual_number VARCHAR(16)")
+# Upgrade legacy users tables in-place; create_all only creates missing tables.
+_user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+_user_column_types = {
+    "phone": "VARCHAR(20)",
+    "losgram_id": "VARCHAR(10)",
+    "telegram_user_id": "VARCHAR(32)",
+    "display_name": "VARCHAR(80) DEFAULT 'Пользователь'",
+    "username": "VARCHAR(32)",
+    "avatar_url": "VARCHAR(500)",
+    "created_at": "TIMESTAMP WITH TIME ZONE",
+    "virtual_number": "VARCHAR(16)",
+}
+with engine.begin() as connection:
+    for _column, _sql_type in _user_column_types.items():
+        if _column not in _user_columns:
+            connection.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {_column} {_sql_type}")
+    for _column in ("losgram_id", "telegram_user_id", "username", "virtual_number"):
+        connection.exec_driver_sql(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_{_column} ON users ({_column})"
+        )
 
 
 def get_db():
