@@ -26,6 +26,7 @@ OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "5"))
 DEV_OTP_CODE = os.getenv("DEV_OTP_CODE", "123456")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 LOGIN_CODE_TTL_MINUTES = int(os.getenv("LOGIN_CODE_TTL_MINUTES", "5"))
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -158,6 +159,18 @@ class MessageRequest(BaseModel):
 
 
 app = FastAPI(title="LosGram API", version="0.1.0", description="Backend API for the LosGram messenger")
+
+
+@app.on_event("startup")
+def register_telegram_webhook():
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET and PUBLIC_BASE_URL:
+        telegram_api("setWebhook", {
+            "url": f"{PUBLIC_BASE_URL}/telegram/webhook",
+            "secret_token": TELEGRAM_WEBHOOK_SECRET,
+            "allowed_updates": ["message"],
+        })
+
+
 origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "*").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
