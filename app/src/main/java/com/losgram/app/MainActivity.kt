@@ -173,7 +173,7 @@ fun TelegramLoginScreen(onLogin: suspend (String, String) -> Unit) {
             }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Blue),
                 shape = RoundedCornerShape(12.dp)) { Text("Открыть @LosGram_Bot", color = Color.White) }
             Spacer(Modifier.height(22.dp))
-            OutlinedTextField(value = losgramId,
+            OutlinedTextField(value = virtualNumber,
                 onValueChange = { virtualNumber = it.filter { ch -> ch.isDigit() || ch == '+' }.take(13); error = "" },
                 modifier = Modifier.fillMaxWidth(), label = { Text("Виртуальный номер") },
                 placeholder = { Text("+447123456789") }, singleLine = true,
