@@ -744,6 +744,7 @@ private fun ProfileSettingsScreen(
     var premiumActive by remember { mutableStateOf(false) }
     var premiumUntil by remember { mutableStateOf("") }
     var starsBalance by remember { mutableIntStateOf(0) }
+    var collectibleGifts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var notifications by remember { mutableStateOf(true) }
     var showPhone by remember { mutableStateOf(false) }
     var showLastSeen by remember { mutableStateOf(true) }
@@ -767,6 +768,8 @@ private fun ProfileSettingsScreen(
             premiumActive = me.optBoolean("premium_active", false)
             premiumUntil = me.optString("premium_until")
             starsBalance = me.optInt("stars_balance", 0)
+            val giftItems = api("/me/gifts", session.token).optJSONArray("items") ?: JSONArray()
+            collectibleGifts = (0 until giftItems.length()).map { giftItems.getJSONObject(it) }
             val prefs = api("/me/settings", session.token)
             notifications = prefs.optBoolean("notifications_enabled", true)
             showPhone = prefs.optBoolean("show_phone", false)
@@ -928,6 +931,26 @@ private fun ProfileSettingsScreen(
                                 Spacer(Modifier.height(22.dp))
                                 Text("Не указана", color = White, fontSize = 20.sp)
                                 Text("Дата рождения", color = Muted, fontSize = 13.sp)
+                                if (collectibleGifts.isNotEmpty()) {
+                                    Spacer(Modifier.height(24.dp))
+                                    Text("Коллекция подарков", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                    Text("${collectibleGifts.size} NFT-подарков", color = Muted, fontSize = 12.sp)
+                                    collectibleGifts.forEach { gift ->
+                                        Row(Modifier.fillMaxWidth().padding(top = 10.dp)
+                                            .clip(RoundedCornerShape(16.dp)).background(Panel).padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.size(54.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF393047)),
+                                                contentAlignment = Alignment.Center) { Text("💎", fontSize = 28.sp) }
+                                            Spacer(Modifier.width(12.dp))
+                                            Column(Modifier.weight(1f)) {
+                                                Text(gift.optString("name"), color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                                Text("${gift.optString("model")} · ${gift.optString("background")}", color = Muted, fontSize = 12.sp)
+                                                Text("Узор: ${gift.optString("pattern")}", color = Muted, fontSize = 12.sp)
+                                            }
+                                            Text("#${gift.optInt("number")}", color = Color(0xFFFFD76A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
                                 Text("Настройки профиля", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(top = 18.dp).clickable { onOpenSettings() })
                                 Spacer(Modifier.height(22.dp))
