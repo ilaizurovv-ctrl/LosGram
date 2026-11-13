@@ -309,10 +309,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().height(72.dp).padding(start = 22.dp, end = 18.dp),
+                    Modifier.fillMaxWidth().height(88.dp).padding(start = 22.dp, end = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("LosGram", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold,
+                    Text("LosGram", color = White, fontSize = 32.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f))
                     Text("▣", color = Blue, fontSize = 23.sp, modifier = Modifier.padding(end = 22.dp))
                     Text("⋮", color = White, fontSize = 28.sp,
@@ -320,14 +320,14 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(56.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(72.dp)
                         .clip(CircleShape).background(Panel).clickable { searchOpen = true }
                         .padding(horizontal = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("⌕", color = Muted, fontSize = 29.sp, modifier = Modifier.padding(end = 16.dp))
                     if (!searchOpen) {
-                        Text("Поиск чатов", color = Muted, fontSize = 17.sp)
+                        Text("Поиск чатов", color = Muted, fontSize = 20.sp)
                     } else {
                         OutlinedTextField(
                             value = search,
@@ -395,24 +395,24 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     ) {
                         items(chats, key = { it.id }) { chat ->
                             Row(
-                                Modifier.fillMaxWidth().height(90.dp).clickable { selectedChat = chat }
-                                    .padding(horizontal = 16.dp),
+                                Modifier.fillMaxWidth().height(142.dp).clickable { selectedChat = chat }
+                                    .padding(horizontal = 20.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
-                                    Modifier.size(64.dp).clip(CircleShape)
+                                    Modifier.size(92.dp).clip(CircleShape)
                                         .background(if (chat.isGlobal) Blue else Color(0xFF527DA3)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(if (chat.isGlobal) "L" else chat.name.take(1).uppercase(),
-                                        color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Medium)
+                                        color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Medium)
                                 }
-                                Spacer(Modifier.width(14.dp))
+                                Spacer(Modifier.width(18.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(chat.name, color = White, fontSize = 17.sp,
+                                    Text(chat.name, color = White, fontSize = 21.sp,
                                         fontWeight = FontWeight.Medium, maxLines = 1)
                                     Spacer(Modifier.height(5.dp))
-                                    Text(chat.message, color = Muted, fontSize = 15.sp, maxLines = 1)
+                                    Text(chat.message, color = Muted, fontSize = 18.sp, maxLines = 1)
                                 }
                             }
                             HorizontalDivider(color = Color(0xFF202020), thickness = 0.5.dp,
@@ -428,14 +428,14 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     search = ""
                     searchResults = emptyList()
                 },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 106.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 126.dp).size(96.dp),
                 containerColor = Blue, contentColor = Color.White, shape = CircleShape
-            ) { Text("✚", fontSize = 25.sp) }
+            ) { Text("✚", fontSize = 38.sp) }
 
             Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp)
-                    .height(76.dp).clip(RoundedCornerShape(42.dp)).background(Color(0xFF242424))
-                    .padding(horizontal = 5.dp, vertical = 4.dp),
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 30.dp, end = 30.dp, bottom = 18.dp)
+                    .height(104.dp).clip(RoundedCornerShape(42.dp)).background(Color(0xFF242424))
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val labels = listOf("Чаты", "Контакты", "Настройки", "Профиль")
@@ -452,7 +452,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(icons[index], color = if (selectedTab == index) Blue else White, fontSize = 25.sp)
+                        Text(icons[index], color = if (selectedTab == index) Blue else White, fontSize = 32.sp)
                         Text(label, color = if (selectedTab == index) Blue else White, fontSize = 12.sp,
                             fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal)
                     }
