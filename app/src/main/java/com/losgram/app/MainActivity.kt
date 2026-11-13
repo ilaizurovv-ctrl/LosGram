@@ -1458,7 +1458,7 @@ private fun SettingsDetail(key: String) {
             }
             "LosGram для бизнеса" -> Text("Данные бизнес-профиля можно изменить во вкладке «Профиль».",
                 color = Muted, fontSize = 13.sp)
-            "Отправить подарок" -> LosGramMarketScreen(onBack = { expandedSetting = "" })
+            "Отправить подарок" -> LosGramMarketScreen(onBack = { })
             "Задать вопрос" -> {
                 OutlinedTextField(helpText, { helpText = it }, Modifier.fillMaxWidth(),
                     label = { Text("Ваш вопрос") }, minLines = 2)
