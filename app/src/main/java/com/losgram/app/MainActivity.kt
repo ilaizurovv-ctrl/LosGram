@@ -724,6 +724,8 @@ private fun ProfileSettingsScreen(
                         }
                     } else {
                         item {
+                            OwnerPanel(session)
+                            Spacer(Modifier.height(10.dp))
                             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp)) {
                                 Text("⭐ Los Premium", color = Color(0xFFFFD76A), fontSize = 23.sp, fontWeight = FontWeight.Bold)
                                 Text("Подписка расширит лимиты и откроет дополнительные возможности.", color = Muted, fontSize = 14.sp)
@@ -784,6 +786,114 @@ private fun ProfileSettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OwnerPanel(session: LoginSession) {
+    var isAdmin by remember { mutableStateOf(false) }
+    var checked by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var users by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var selected by remember { mutableStateOf<JSONObject?>(null) }
+    var stars by remember { mutableStateOf("0") }
+    var premiumDays by remember { mutableStateOf("0") }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(session.token) {
+        try { isAdmin = api("/admin/users?q=", session.token).optJSONArray("items") != null }
+        catch (_: Exception) { isAdmin = false }
+        checked = true
+    }
+    if (!checked || !isAdmin) return
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF3A315B)), contentAlignment = Alignment.Center) {
+                Text("♛", color = Color(0xFFC5A6FF), fontSize = 23.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Панель владельца", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Управление аккаунтами LosGram", color = Muted, fontSize = 12.sp)
+            }
+            Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("ПОЛЬЗОВАТЕЛИ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+            placeholder = { Text("Поиск по имени или @username") },
+            trailingIcon = {
+                Text("⌕", color = Color(0xFFC5A6FF), fontSize = 23.sp,
+                    modifier = Modifier.clickable {
+                        scope.launch {
+                            busy = true
+                            try {
+                                val arr = api("/admin/users?q=" + Uri.encode(query.trim()), session.token).optJSONArray("items") ?: JSONArray()
+                                users = (0 until arr.length()).map { arr.getJSONObject(it) }
+                                selected = null
+                                status = ""
+                            } catch (e: Exception) { status = e.message ?: "Ошибка поиска" }
+                            finally { busy = false }
+                        }
+                    }.padding(horizontal = 12.dp))
+            },
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8),
+                unfocusedBorderColor = Navy, focusedTextColor = White, unfocusedTextColor = White,
+                focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color(0xFF8B6BC8))
+        users.forEach { user ->
+            val name = user.optString("display_name", "Пользователь")
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(if (selected?.optInt("id") == user.optInt("id")) Color(0xFF393047) else Navy)
+                .clickable { selected = user }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(38.dp).clip(CircleShape).background(Color(0xFF51416D)), contentAlignment = Alignment.Center) {
+                    Text(name.take(1).uppercase(), color = White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(user.optString("username").takeIf { it.isNotBlank() && it != "null" }?.let { "@$it" }
+                        ?: user.optString("virtual_number"), color = Muted, fontSize = 12.sp)
+                }
+                Text("⭐ ${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(5.dp))
+        }
+        selected?.let { user ->
+            Divider(color = Navy)
+            Spacer(Modifier.height(10.dp))
+            Text("УПРАВЛЕНИЕ АККАУНТОМ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(user.optString("display_name"), color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            OutlinedTextField(stars, { stars = it.filter { c -> c == '-' || c.isDigit() }.take(7) },
+                Modifier.fillMaxWidth(), label = { Text("Изменение звёзд (+ / −)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8), focusedTextColor = White, unfocusedTextColor = White))
+            OutlinedTextField(premiumDays, { premiumDays = it.filter { c -> c == '-' || c.isDigit() }.take(5) },
+                Modifier.fillMaxWidth(), label = { Text("Дни Premium (+ / −)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8), focusedTextColor = White, unfocusedTextColor = White))
+            Button(onClick = {
+                scope.launch {
+                    busy = true
+                    try {
+                        val result = api("/admin/grant", session.token, "POST",
+                            JSONObject().put("user_id", user.optInt("id"))
+                                .put("stars_delta", stars.toIntOrNull() ?: 0)
+                                .put("premium_days", premiumDays.toIntOrNull() ?: 0))
+                        user.put("stars_balance", result.optInt("stars_balance"))
+                        users = users.toList()
+                        stars = "0"; premiumDays = "0"
+                        status = "Изменения применены"
+                    } catch (e: Exception) { status = e.message ?: "Не удалось применить изменения" }
+                    finally { busy = false }
+                }
+            }, enabled = !busy && ((stars.toIntOrNull() ?: 0) != 0 || (premiumDays.toIntOrNull() ?: 0) != 0),
+                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF70549B))) {
+                Text(if (busy) "Обрабатываем..." else "Применить изменения", color = Color.White)
+            }
+        }
+        if (status.isNotBlank()) Text(status, color = if (status == "Изменения применены") Color(0xFF9BD18B) else Color(0xFFFF8888), fontSize = 12.sp)
     }
 }
 
