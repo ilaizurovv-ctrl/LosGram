@@ -158,6 +158,18 @@ class NFTListing(Base):
     sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class NFTUpgradeAccess(Base):
+    __tablename__ = "nft_upgrade_access"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gift_id: Mapped[int] = mapped_column(ForeignKey("collectible_gifts.id"), unique=True, index=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("nft_listings.id"), unique=True, index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    price: Mapped[int] = mapped_column(Integer)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class NFTReview(Base):
     __tablename__ = "nft_reviews"
     __table_args__ = (UniqueConstraint("listing_id", "buyer_id", name="uq_nft_review_listing_buyer"),)
@@ -375,6 +387,16 @@ class NFTListingCreateRequest(BaseModel):
 class AdminTelegramGiftPublishRequest(BaseModel):
     price: int = Field(ge=1, le=10000000)
     quantity: int = Field(default=1, ge=1, le=100)
+
+
+class NFTUpgradePurchaseRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=80)
+    background: str = Field(min_length=1, max_length=80)
+    pattern: str = Field(min_length=1, max_length=80)
+
+
+class NFTUpgradeAccessRequest(BaseModel):
+    price: int = Field(ge=1, le=10000000)
 
 
 class NFTReviewRequest(BaseModel):
@@ -924,6 +946,84 @@ def admin_telegram_gift_image(gift_id: str, admin: User = Depends(require_admin)
         raise HTTPException(status_code=502, detail=f"Не удалось загрузить изображение Telegram: {type(exc).__name__}")
 
 
+@app.get("/admin/nft-sales")
+def admin_nft_sales(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    rows = db.execute(select(NFTListing, CollectibleGift, User).join(
+        CollectibleGift, CollectibleGift.id == NFTListing.gift_id
+    ).join(User, User.id == NFTListing.buyer_id).where(
+        NFTListing.seller_id == admin.id, NFTListing.status == "sold"
+    ).order_by(NFTListing.sold_at.desc()).limit(300)).all()
+    items = []
+    for listing, gift, buyer in rows:
+        access = db.scalar(select(NFTUpgradeAccess).where(NFTUpgradeAccess.listing_id == listing.id))
+        items.append({"listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
+            "number": gift.number, "buyer_id": buyer.id, "buyer_name": buyer.display_name,
+            "price": listing.price, "upgrade_price": access.price if access else None,
+            "upgrade_used": bool(access and access.used)})
+    return {"items": items}
+
+
+@app.post("/admin/nft-sales/{listing_id}/upgrade-access")
+def admin_grant_nft_upgrade_access(listing_id: int, payload: NFTUpgradeAccessRequest,
+                                   db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    listing = db.scalar(select(NFTListing).where(NFTListing.id == listing_id,
+        NFTListing.seller_id == admin.id, NFTListing.status == "sold").with_for_update())
+    if not listing or not listing.buyer_id:
+        raise HTTPException(status_code=404, detail="Проданная NFT не найдена")
+    access = db.scalar(select(NFTUpgradeAccess).where(NFTUpgradeAccess.listing_id == listing.id).with_for_update())
+    if access and access.used:
+        raise HTTPException(status_code=409, detail="Доступ уже использован")
+    if access:
+        access.price = payload.price
+    else:
+        access = NFTUpgradeAccess(gift_id=listing.gift_id, listing_id=listing.id,
+            seller_id=admin.id, buyer_id=listing.buyer_id, price=payload.price)
+        db.add(access)
+    db.commit()
+    try:
+        buyer = db.get(User, listing.buyer_id)
+        add_saved_system_message(db, buyer,
+            f"✨ Для вашего NFT №{listing.gift_id} открыт доступ к улучшению модели, фона и узора за {payload.price} ⭐.")
+    except Exception:
+        db.rollback()
+    return {"ok": True, "listing_id": listing.id, "gift_id": listing.gift_id,
+            "buyer_id": listing.buyer_id, "price": payload.price, "used": False}
+
+
+@app.post("/me/gifts/{gift_id}/upgrade")
+def purchase_nft_upgrade(gift_id: int, payload: NFTUpgradePurchaseRequest,
+                         db: Session = Depends(get_db), buyer: User = Depends(current_user)):
+    access = db.scalar(select(NFTUpgradeAccess).where(
+        NFTUpgradeAccess.gift_id == gift_id, NFTUpgradeAccess.buyer_id == buyer.id,
+        NFTUpgradeAccess.used.is_(False)).with_for_update())
+    if not access:
+        raise HTTPException(status_code=403, detail="Владелец ещё не открыл доступ к улучшению этого NFT")
+    gift = db.scalar(select(CollectibleGift).where(
+        CollectibleGift.id == gift_id, CollectibleGift.user_id == buyer.id).with_for_update())
+    if not gift:
+        raise HTTPException(status_code=404, detail="NFT не найден в вашей коллекции")
+    accounts = db.scalars(select(User).where(User.id.in_([buyer.id, access.seller_id]))
+        .order_by(User.id).with_for_update().execution_options(populate_existing=True)).all()
+    by_id = {x.id: x for x in accounts}
+    payer, seller = by_id.get(buyer.id), by_id.get(access.seller_id)
+    if not payer or not seller:
+        raise HTTPException(status_code=404, detail="Покупатель или владелец не найден")
+    if payer.stars_balance < access.price:
+        raise HTTPException(status_code=400, detail=f"Недостаточно звёзд. Нужно: {access.price} ⭐")
+    payer.stars_balance -= access.price
+    seller.stars_balance += access.price
+    gift.model, gift.background, gift.pattern = payload.model.strip(), payload.background.strip(), payload.pattern.strip()
+    access.used = True
+    db.commit()
+    try:
+        add_saved_system_message(db, payer, f"✨ NFT «{gift.name}» №{gift.number} улучшен: модель {gift.model}, фон {gift.background}, узор {gift.pattern}.")
+        add_saved_system_message(db, seller, f"⭐ Покупатель улучшил NFT №{gift.number}. Вам начислено {access.price} ⭐.")
+    except Exception:
+        db.rollback()
+    return {"ok": True, "gift_id": gift.id, "price": access.price,
+        "buyer_balance": payer.stars_balance, "seller_balance": seller.stars_balance}
+
+
 @app.get("/admin/gifts")
 def admin_list_gifts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     rows = db.execute(select(CollectibleGift, User).join(User, User.id == CollectibleGift.user_id).order_by(CollectibleGift.number.desc()).limit(300)).all()
@@ -1256,6 +1356,9 @@ def my_collectible_gifts(db: Session = Depends(get_db), user: User = Depends(cur
         "created_at": gift.created_at.isoformat(),
         "listing_id": listing.id if listing and listing.status == "active" else None,
         "listing_price": listing.price if listing and listing.status == "active" else None,
+        "upgrade_price": (access.price if (access := db.scalar(select(NFTUpgradeAccess).where(
+            NFTUpgradeAccess.gift_id == gift.id, NFTUpgradeAccess.buyer_id == user.id,
+            NFTUpgradeAccess.used.is_(False)))) else None),
     } for gift, listing in rows]}
 
 
