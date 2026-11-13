@@ -279,6 +279,9 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
     var refreshKey by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var createTitle by remember { mutableStateOf("") }
+    var createKind by remember { mutableStateOf("group") }
     var searchResults by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -366,11 +369,46 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         return
     }
 
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Создать в LosGram") },
+            text = {
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = createKind == "group", onClick = { createKind = "group" }, label = { Text("Группа") })
+                        FilterChip(selected = createKind == "channel", onClick = { createKind = "channel" }, label = { Text("Канал") })
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = createTitle, onValueChange = { createTitle = it.take(120) },
+                        label = { Text("Название") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            val created = api("/conversations", session.token, "POST",
+                                JSONObject().put("title", createTitle.trim()).put("kind", createKind))
+                            val id = created.optInt("id")
+                            val title = created.optString("title", createTitle)
+                            chats = (chats + ChatItem(id, title, if (createKind == "channel") "Канал LosGram" else "Группа LosGram"))
+                            showCreateDialog = false
+                            createTitle = ""
+                            selectedChat = ChatItem(id, title, "Нет сообщений")
+                        } catch (e: Exception) { error = e.message ?: "Не удалось создать" }
+                    }
+                }, enabled = createTitle.trim().length >= 2) { Text("Создать") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateDialog = false }) { Text("Отмена") } }
+        )
+    }
+
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().height(88.dp).padding(start = 22.dp, end = 18.dp),
+                    Modifier.fillMaxWidth().height(64.dp).padding(start = 22.dp, end = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("LosGram", color = White, fontSize = 32.sp, fontWeight = FontWeight.Bold,
@@ -381,7 +419,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(72.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(54.dp)
                         .clip(CircleShape).background(Panel).clickable { searchOpen = true }
                         .padding(horizontal = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -432,7 +470,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                             }.padding(horizontal = 22.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(Modifier.size(48.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(40.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
                                 Text(name.take(1).uppercase(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(Modifier.width(14.dp))
@@ -459,24 +497,24 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     ) {
                         items(chats, key = { it.id }) { chat ->
                             Row(
-                                Modifier.fillMaxWidth().height(142.dp).clickable { selectedChat = chat }
+                                Modifier.fillMaxWidth().height(104.dp).clickable { selectedChat = chat }
                                     .padding(horizontal = 20.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
-                                    Modifier.size(92.dp).clip(CircleShape)
+                                    Modifier.size(66.dp).clip(CircleShape)
                                         .background(if (chat.isSaved) Color(0xFF8D68F5) else if (chat.isGlobal) Blue else Color(0xFF527DA3)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(if (chat.isSaved) "★" else if (chat.isGlobal) "L" else chat.name.take(1).uppercase(),
-                                        color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Medium)
+                                        color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Medium)
                                 }
                                 Spacer(Modifier.width(18.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(chat.name, color = White, fontSize = 21.sp,
+                                    Text(chat.name, color = White, fontSize = 18.sp,
                                         fontWeight = FontWeight.Medium, maxLines = 1)
                                     Spacer(Modifier.height(5.dp))
-                                    Text(chat.message, color = Muted, fontSize = 18.sp, maxLines = 1)
+                                    Text(chat.message, color = Muted, fontSize = 15.sp, maxLines = 1)
                                 }
                             }
                             HorizontalDivider(color = Color(0xFF202020), thickness = 0.5.dp,
@@ -492,13 +530,13 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     search = ""
                     searchResults = emptyList()
                 },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 126.dp).size(96.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 104.dp).size(64.dp),
                 containerColor = Blue, contentColor = Color.White, shape = CircleShape
             ) { Text("✚", fontSize = 38.sp) }
 
             Row(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 30.dp, end = 30.dp, bottom = 18.dp)
-                    .height(104.dp).clip(RoundedCornerShape(42.dp)).background(Color(0xFF242424))
+                    .height(78.dp).clip(RoundedCornerShape(34.dp)).background(Color(0xFF242424))
                     .padding(horizontal = 6.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
