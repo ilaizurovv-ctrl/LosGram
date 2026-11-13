@@ -37,8 +37,10 @@ jobs:
           TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
         run: |
           set -euo pipefail
-          test -n "$TELEGRAM_APP_ID" || { echo "::error::Add TELEGRAM_APP_ID to LosGram Actions secrets."; exit 1; }
-          test -n "$TELEGRAM_APP_HASH" || { echo "::error::Add TELEGRAM_APP_HASH to LosGram Actions secrets."; exit 1; }
+          TELEGRAM_APP_ID="${TELEGRAM_APP_ID:-0}"
+          TELEGRAM_APP_HASH="${TELEGRAM_APP_HASH:-}"
+          if [ "$TELEGRAM_APP_ID" = "0" ] || [ -z "$TELEGRAM_APP_HASH" ]; then echo "::warning::Telegram API credentials are not configured; APK may compile, but Telegram login will not work until TELEGRAM_APP_ID and TELEGRAM_APP_HASH secrets are added."; fi
+          export TELEGRAM_APP_ID TELEGRAM_APP_HASH
           python3 - <<'PY'
           import os, pathlib, re
           root = pathlib.Path(".")
