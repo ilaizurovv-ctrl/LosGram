@@ -39,19 +39,21 @@ private const val TELEGRAM_BOT_URL = "https://t.me/LosGram_Bot"
 private const val PREFS = "losgram_session"
 private const val TOKEN_KEY = "access_token"
 
-private val Navy = Color(0xFF17212B)
-private val Panel = Color(0xFF1F2C38)
-private val Blue = Color(0xFF3390EC)
-private val Muted = Color(0xFF8A9AA9)
-private val White = Color(0xFFF5F7FA)
+private val Navy = Color(0xFF171717)
+private val Panel = Color(0xFF222222)
+private val Blue = Color(0xFF6A994E)
+private val Muted = Color(0xFF858585)
+private val White = Color(0xFFF2F2F2)
 
 data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
-data class ChatItem(val id: Int, val name: String, val message: String)
+data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false)
 data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(23, 23, 23)
+        window.navigationBarColor = android.graphics.Color.rgb(23, 23, 23)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Blue, background = Navy, surface = Panel,
@@ -230,10 +232,11 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
     var error by remember { mutableStateOf("") }
     var selectedChat by remember { mutableStateOf<ChatItem?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
-    var searchOpen by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(session.token, refreshKey) {
@@ -251,9 +254,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     item.optInt("id"),
                     item.optString("title").takeIf { it.isNotBlank() && it != "null" }
                         ?: other?.optString("display_name", "Чат").orEmpty().ifBlank { "Чат" },
-                    last?.optString("body") ?: "Нет сообщений"
+                    last?.optString("body") ?: "Нет сообщений",
+                    item.optString("kind") == "global"
                 )
-            }
+            }.sortedByDescending { it.isGlobal }
         } catch (e: Exception) {
             error = e.message ?: "Не удалось загрузить чаты"
         } finally {
@@ -293,125 +297,114 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().background(Panel).padding(start = 20.dp, end = 12.dp, top = 18.dp, bottom = 14.dp),
+                    Modifier.fillMaxWidth().height(72.dp).padding(start = 22.dp, end = 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("LosGram", color = Blue, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                        Text("Мессенджер", color = Muted, fontSize = 12.sp)
-                    }
-                    Text("⌕", color = White, fontSize = 29.sp,
-                        modifier = Modifier.clickable {
-                            searchOpen = !searchOpen
-                            searchResults = emptyList()
-                            search = ""
-                        }.padding(horizontal = 12.dp, vertical = 4.dp))
-                    Text("⟳", color = White, fontSize = 25.sp,
-                        modifier = Modifier.clickable { refreshKey++ }.padding(horizontal = 8.dp))
-                    Text("⋮", color = White, fontSize = 25.sp,
-                        modifier = Modifier.clickable { onLogout() }.padding(horizontal = 8.dp))
-                }
-
-                if (searchOpen) {
-                    Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        OutlinedTextField(
-                            value = search,
-                            onValueChange = { search = it; searchResults = emptyList() },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            placeholder = { Text("Имя или @username") },
-                            trailingIcon = {
-                                Text("Найти", color = Blue, modifier = Modifier.clickable { searchUsers() }.padding(8.dp))
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Blue, unfocusedBorderColor = Navy,
-                                focusedTextColor = White, unfocusedTextColor = White,
-                                focusedContainerColor = Navy, unfocusedContainerColor = Navy
-                            )
-                        )
-                        if (searching) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Blue)
-                        searchResults.forEach { (userId, name) ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
-                                    scope.launch {
-                                        try {
-                                            val result = api("/conversations/direct", session.token, "POST",
-                                                JSONObject().put("user_id", userId))
-                                            selectedChat = ChatItem(result.optInt("id"), name, "Нет сообщений")
-                                            searchOpen = false
-                                            searchResults = emptyList()
-                                            search = ""
-                                        } catch (e: Exception) {
-                                            error = e.message ?: "Не удалось создать чат"
-                                        }
-                                    }
-                                }.padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(Modifier.size(42.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
-                                    Text(name.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Text(name, color = White, fontWeight = FontWeight.Medium)
-                            }
-                        }
-                    }
+                    Text("LosGram", color = White, fontSize = 25.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    Text("▣", color = Blue, fontSize = 23.sp, modifier = Modifier.padding(end = 22.dp))
+                    Text("⋮", color = White, fontSize = 28.sp,
+                        modifier = Modifier.clickable { onLogout() }.padding(horizontal = 4.dp))
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().background(Panel).padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(22.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(56.dp)
+                        .clip(CircleShape).background(Panel).clickable { searchOpen = true }
+                        .padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Все чаты", color = Blue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("Контакты", color = Muted, fontSize = 14.sp)
-                    Text("Звонки", color = Muted, fontSize = 14.sp)
-                }
-                Box(Modifier.fillMaxWidth().height(2.dp).background(Panel)) {
-                    Box(Modifier.padding(start = 16.dp).width(66.dp).fillMaxHeight().background(Blue))
+                    Text("⌕", color = Muted, fontSize = 29.sp, modifier = Modifier.padding(end = 16.dp))
+                    if (!searchOpen) {
+                        Text("Поиск чатов", color = Muted, fontSize = 17.sp)
+                    } else {
+                        OutlinedTextField(
+                            value = search,
+                            onValueChange = { search = it; searchResults = emptyList() },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("Имя или @username", color = Muted) },
+                            trailingIcon = {
+                                Text("Найти", color = Blue, modifier = Modifier.clickable { searchUsers() }.padding(6.dp))
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
+                                focusedTextColor = White, unfocusedTextColor = White,
+                                cursorColor = Blue, focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
+                            )
+                        )
+                    }
                 }
 
+                if (searchOpen && (searching || searchResults.isNotEmpty())) {
+                    if (searching) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Blue)
+                    searchResults.forEach { (userId, name) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                scope.launch {
+                                    try {
+                                        val result = api("/conversations/direct", session.token, "POST",
+                                            JSONObject().put("user_id", userId))
+                                        selectedChat = ChatItem(result.optInt("id"), name, "Нет сообщений")
+                                        searchOpen = false
+                                        searchResults = emptyList()
+                                        search = ""
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "Не удалось создать чат"
+                                    }
+                                }
+                            }.padding(horizontal = 22.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(48.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
+                                Text(name.take(1).uppercase(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Text(name, color = White, fontSize = 16.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
                 if (error.isNotBlank()) {
-                    Text(error, color = Color(0xFFFF7777), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    Text(error, color = Color(0xFFFF7777), modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
                 }
 
                 when {
-                    loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Blue)
                     }
-                    chats.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(28.dp)) {
-                            Box(Modifier.size(76.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
-                                Text("✉", color = Blue, fontSize = 34.sp)
-                            }
-                            Spacer(Modifier.height(18.dp))
-                            Text("Пока нет сообщений", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(8.dp))
-                            Text("Нажмите на кнопку ниже, чтобы найти человека и начать общение.",
-                                color = Muted, fontSize = 14.sp)
-                        }
+                    chats.isEmpty() -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("Общий чат LosGram появится здесь", color = Muted, fontSize = 15.sp)
                     }
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                    else -> LazyColumn(
+                        Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 110.dp)
+                    ) {
                         items(chats, key = { it.id }) { chat ->
                             Row(
-                                Modifier.fillMaxWidth().clickable { selectedChat = chat }
-                                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                                Modifier.fillMaxWidth().height(90.dp).clickable { selectedChat = chat }
+                                    .padding(horizontal = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(Modifier.size(56.dp).clip(CircleShape).background(
-                                    listOf(Color(0xFF527DA3), Color(0xFF7A6BAA), Color(0xFF4C8B7B), Color(0xFFB07855))[chat.id.mod(4)]
-                                ), contentAlignment = Alignment.Center) {
-                                    Text(chat.name.take(1).uppercase(), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Medium)
+                                Box(
+                                    Modifier.size(64.dp).clip(CircleShape)
+                                        .background(if (chat.isGlobal) Blue else Color(0xFF527DA3)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(if (chat.isGlobal) "L" else chat.name.take(1).uppercase(),
+                                        color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Medium)
                                 }
-                                Spacer(Modifier.width(13.dp))
+                                Spacer(Modifier.width(14.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(chat.name, color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(chat.message, color = Muted, fontSize = 14.sp, maxLines = 1)
+                                    Text(chat.name, color = White, fontSize = 17.sp,
+                                        fontWeight = FontWeight.Medium, maxLines = 1)
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(chat.message, color = Muted, fontSize = 15.sp, maxLines = 1)
                                 }
-                                Spacer(Modifier.width(8.dp))
-                                Text(" ", color = Muted, fontSize = 11.sp)
                             }
-                            HorizontalDivider(color = Panel, thickness = 0.7.dp, modifier = Modifier.padding(start = 85.dp))
+                            HorizontalDivider(color = Color(0xFF202020), thickness = 0.5.dp,
+                                modifier = Modifier.padding(start = 94.dp))
                         }
                     }
                 }
@@ -423,12 +416,35 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     search = ""
                     searchResults = emptyList()
                 },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-                containerColor = Blue,
-                contentColor = Color.White,
-                shape = CircleShape
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 106.dp),
+                containerColor = Blue, contentColor = Color.White, shape = CircleShape
+            ) { Text("✚", fontSize = 25.sp) }
+
+            Row(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 12.dp)
+                    .height(76.dp).clip(RoundedCornerShape(42.dp)).background(Color(0xFF242424))
+                    .padding(horizontal = 5.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("✎", fontSize = 25.sp)
+                val labels = listOf("Чаты", "Контакты", "Настройки", "Профиль")
+                val icons = listOf("●", "☻", "⚙", "◉")
+                labels.forEachIndexed { index, label ->
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(38.dp))
+                            .background(if (selectedTab == index) Color(0xFF30352D) else Color.Transparent)
+                            .clickable {
+                                selectedTab = index
+                                if (index == 3) onLogout()
+                                if (index == 1) { searchOpen = true; search = ""; searchResults = emptyList() }
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(icons[index], color = if (selectedTab == index) Blue else White, fontSize = 25.sp)
+                        Text(label, color = if (selectedTab == index) Blue else White, fontSize = 12.sp,
+                            fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
             }
         }
     }
