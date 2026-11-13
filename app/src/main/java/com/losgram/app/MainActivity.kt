@@ -3,8 +3,11 @@ package com.losgram.app
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -310,6 +315,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
             session = session,
             showProfile = selectedTab == 3,
             onBack = { selectedTab = 0 },
+            onOpenSettings = { selectedTab = 2 },
             onLogout = onLogout
         )
         return
@@ -559,6 +565,7 @@ private fun ProfileSettingsScreen(
     session: LoginSession,
     showProfile: Boolean,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onLogout: () -> Unit
 ) {
     var displayName by remember { mutableStateOf(session.displayName) }
@@ -631,6 +638,13 @@ private fun ProfileSettingsScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 30.dp)) {
                     if (showProfile) {
                         item {
+                            val context = LocalContext.current
+                            val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                                if (uri != null) {
+                                    context.getSharedPreferences("losgram_profile", Context.MODE_PRIVATE).edit().putString("avatar_uri", uri.toString()).apply()
+                                    message = "Фото выбрано и сохранено на этом устройстве"
+                                }
+                            }
                             Column(Modifier.fillMaxWidth()) {
                                 Row(Modifier.fillMaxWidth().padding(top = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -642,13 +656,17 @@ private fun ProfileSettingsScreen(
                                 }
                                 Spacer(Modifier.height(4.dp))
                                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    Box(Modifier.size(152.dp).clip(CircleShape).background(Panel),
-                                        contentAlignment = Alignment.Center) {
-                                        Text(displayName.trim().take(1).uppercase().ifBlank { "L" },
-                                            color = White, fontSize = 58.sp, fontWeight = FontWeight.Bold)
+                                    val savedAvatar = remember { context.getSharedPreferences("losgram_profile", Context.MODE_PRIVATE).getString("avatar_uri", null) }
+                                    val avatarBitmap = remember(savedAvatar) {
+                                        try { savedAvatar?.let { context.contentResolver.openInputStream(Uri.parse(it))?.use { stream -> BitmapFactory.decodeStream(stream)?.asImageBitmap() } } }
+                                        catch (_: Exception) { null }
+                                    }
+                                    Box(Modifier.size(116.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
+                                        if (avatarBitmap != null) Image(avatarBitmap, null, Modifier.fillMaxSize())
+                                        else Text(displayName.trim().take(1).uppercase().ifBlank { "L" }, color = White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
-                                Spacer(Modifier.height(28.dp))
+                                Spacer(Modifier.height(16.dp))
                                 Text(displayName.ifBlank { "Ваше имя" } +
                                     if (username.isNotBlank()) " #$username" else "",
                                     color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold,
@@ -656,20 +674,20 @@ private fun ProfileSettingsScreen(
                                 Text("⚠  Рейтинг пока не рассчитан", color = Color(0xFFB83D4B),
                                     fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                Spacer(Modifier.height(34.dp))
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Spacer(Modifier.height(20.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                     listOf("▣\nВыбрать фото", "✎\nИзменить", "⚙\nНастройки").forEachIndexed { index, label ->
-                                        Column(Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(22.dp))
+                                        Column(Modifier.weight(1f).height(70.dp).clip(RoundedCornerShape(18.dp))
                                             .background(Panel).clickable {
                                                 when(index) {
-                                                    0 -> { expandedSetting = "ФОТО ПРОФИЛЯ"; message = "Укажите ссылку на фото в режиме редактирования" }
+                                                    0 -> photoPicker.launch("image/*")
                                                     1 -> expandedSetting = if (expandedSetting == "Редактирование профиля") "" else "Редактирование профиля"
-                                                    2 -> onBack()
+                                                    2 -> onOpenSettings()
                                                 }
                                             }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                             verticalArrangement = Arrangement.Center) {
-                                            Text(label.substringBefore("\n"), color = White, fontSize = 27.sp)
-                                            Text(label.substringAfter("\n"), color = White, fontSize = 12.sp,
+                                            Text(label.substringBefore("\n"), color = White, fontSize = 22.sp)
+                                            Text(label.substringAfter("\n"), color = White, fontSize = 10.sp,
                                                 fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                         }
                                     }
