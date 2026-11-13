@@ -35,3 +35,14 @@ Development will proceed in small MVP stages, starting with authentication and o
 A FastAPI + PostgreSQL backend foundation is in `backend/`. It includes phone-code authentication scaffolding, JWT sessions, user profiles/search, direct conversations, message history, and WebSocket message events.
 
 See [backend/README.md](backend/README.md) for setup and API details. The development OTP shortcut is not real SMS; production login is deliberately disabled until an SMS provider is configured. This backend is an early MVP foundation and has not yet been deployed or security-reviewed.
+
+## ShuzaGram-based rebuild
+
+The `shuzagram-based-rebuild` branch pins the ShuzaGram Mod Android client source in `upstream/ShuzaGram/` as a Git submodule. Clone with:
+
+```bash
+git clone --recurse-submodules --branch shuzagram-based-rebuild https://github.com/ilaizurovv-ctrl/LosGram.git
+git -C LosGram/upstream/ShuzaGram submodule update --init --recursive
+```
+
+See [docs/SHUZAGRAM_MIGRATION.md](docs/SHUZAGRAM_MIGRATION.md) for build prerequisites, credentials, licensing, and the remaining LosGram rebrand work. This is a source integration step, not yet a verified LosGram APK. The original `main` branch is unchanged.
