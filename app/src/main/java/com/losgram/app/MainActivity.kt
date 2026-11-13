@@ -93,9 +93,21 @@ private suspend fun api(path: String, token: String? = null, method: String = "G
         val status = connection.responseCode
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
         val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        val json = if (raw.isBlank()) JSONObject() else JSONObject(raw)
+        val json = try {
+            if (raw.isBlank()) JSONObject()
+            else {
+                val parsed = org.json.JSONTokener(raw).nextValue()
+                parsed as? JSONObject ?: JSONObject().put("_response", parsed.toString())
+            }
+        } catch (_: Exception) {
+            JSONObject().put("_response", raw.take(500))
+        }
         if (status !in 200..299) {
-            throw IllegalStateException(json.optString("detail").ifBlank { "Ошибка сервера ($status)" })
+            val detail = json.optString("detail").ifBlank { json.optString("_response") }
+            throw IllegalStateException(detail.ifBlank { "Ошибка сервера ($status)" })
+        }
+        if (json.has("_response")) {
+            throw IllegalStateException("Сервер вернул неожиданный ответ: " + json.optString("_response").take(250))
         }
         json
     } finally {
