@@ -791,9 +791,9 @@ private fun ProfileSettingsScreen(
                                         try { savedAvatar?.let { context.contentResolver.openInputStream(Uri.parse(it))?.use { stream -> BitmapFactory.decodeStream(stream)?.asImageBitmap() } } }
                                         catch (_: Exception) { null }
                                     }
-                                    Box(Modifier.size(116.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(124.dp).clip(CircleShape).background(Color(0xFF354B5D)), contentAlignment = Alignment.Center) {
                                         if (avatarBitmap != null) Image(avatarBitmap, null, Modifier.fillMaxSize())
-                                        else Text(displayName.trim().take(1).uppercase().ifBlank { "L" }, color = White, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+                                        else Text(displayName.trim().take(1).uppercase().ifBlank { "L" }, color = White, fontSize = 50.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                                 Spacer(Modifier.height(16.dp))
@@ -801,9 +801,22 @@ private fun ProfileSettingsScreen(
                                     if (username.isNotBlank()) " #$username" else "",
                                     color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                Text("⚠  Рейтинг пока не рассчитан", color = Color(0xFFB83D4B),
-                                    fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(14.dp))
+                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("0", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                        Text("Публикации", color = Muted, fontSize = 11.sp)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("—", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                        Text("Рейтинг", color = Muted, fontSize = 11.sp)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("LosGram", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Text("Аккаунт", color = Muted, fontSize = 11.sp)
+                                    }
+                                }
                                 Spacer(Modifier.height(20.dp))
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                     listOf("▣\nВыбрать фото", "✎\nИзменить", "⚙\nНастройки").forEachIndexed { index, label ->
