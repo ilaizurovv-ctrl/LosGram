@@ -51,7 +51,7 @@ private val Muted = Color(0xFF858585)
 private val White = Color(0xFFF2F2F2)
 
 data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
-data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false)
+data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false, val isSaved: Boolean = false)
 data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean)
 
 class MainActivity : ComponentActivity() {
@@ -272,9 +272,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     item.optString("title").takeIf { it.isNotBlank() && it != "null" }
                         ?: other?.optString("display_name", "Чат").orEmpty().ifBlank { "Чат" },
                     last?.optString("body") ?: "Нет сообщений",
-                    item.optString("kind") == "global"
+                    item.optString("kind") == "global",
+                    item.optString("kind") == "saved"
                 )
-            }.sortedByDescending { it.isGlobal }
+            }.sortedWith(compareByDescending<ChatItem> { it.isSaved }.thenByDescending { it.isGlobal })
         } catch (e: Exception) {
             error = e.message ?: "Не удалось загрузить чаты"
         } finally {
@@ -429,10 +430,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                             ) {
                                 Box(
                                     Modifier.size(92.dp).clip(CircleShape)
-                                        .background(if (chat.isGlobal) Blue else Color(0xFF527DA3)),
+                                        .background(if (chat.isSaved) Color(0xFF8D68F5) else if (chat.isGlobal) Blue else Color(0xFF527DA3)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(if (chat.isGlobal) "L" else chat.name.take(1).uppercase(),
+                                    Text(if (chat.isSaved) "★" else if (chat.isGlobal) "L" else chat.name.take(1).uppercase(),
                                         color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Medium)
                                 }
                                 Spacer(Modifier.width(18.dp))
