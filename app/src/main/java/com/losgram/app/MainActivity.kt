@@ -318,7 +318,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         }
     }
 
-    if (selectedTab == 4) {
+    if (selectedTab == 2) {
         LosGramMarketScreen(onBack = { selectedTab = 0 })
         return
     }
@@ -334,12 +334,12 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         return
     }
 
-    if (selectedTab == 2 || selectedTab == 3) {
+    if (selectedTab == 3 || selectedTab == 4) {
         ProfileSettingsScreen(
             session = session,
             showProfile = selectedTab == 4,
             onBack = { selectedTab = 0 },
-            onOpenSettings = { selectedTab = 2 },
+            onOpenSettings = { selectedTab = 3 },
             onLogout = onLogout
         )
         return
