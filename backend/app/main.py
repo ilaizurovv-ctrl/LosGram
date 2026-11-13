@@ -88,6 +88,7 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kind: Mapped[str] = mapped_column(String(16), default="direct")
     title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -239,6 +240,11 @@ with engine.begin() as connection:
         connection.exec_driver_sql(
             f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_{_column} ON users ({_column})"
         )
+    # Upgrade conversations with an owner for group/channel administration.
+    _conversation_columns = {column["name"] for column in inspect(engine).get_columns("conversations")}
+    if "owner_id" not in _conversation_columns:
+        connection.exec_driver_sql("ALTER TABLE conversations ADD COLUMN owner_id INTEGER REFERENCES users(id)")
+    connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_conversations_owner_id ON conversations (owner_id)")
     # Upgrade legacy messages tables created before conversations were introduced.
     _message_columns = {column["name"] for column in inspect(engine).get_columns("messages")}
     for _column, _sql_type in {"reply_to_id": "INTEGER", "edited_at": "TIMESTAMP WITH TIME ZONE", "deleted_at": "TIMESTAMP WITH TIME ZONE"}.items():
@@ -390,6 +396,11 @@ class BotSendMessageRequest(BaseModel):
 
 class DirectConversationRequest(BaseModel):
     user_id: int
+
+
+class ConversationCreateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    kind: str = Field(pattern=r"^(group|channel)$")
 
 
 class MessageRequest(BaseModel):
@@ -1211,6 +1222,37 @@ def search_users(q: str, db: Session = Depends(get_db), user: User = Depends(cur
                        "avatar_url": x.avatar_url} for x in rows]}
 
 
+@app.post("/conversations")
+def create_conversation(payload: ConversationCreateRequest, db: Session = Depends(get_db),
+                        user: User = Depends(current_user)):
+    title = payload.title.strip()
+    if len(title) < 2:
+        raise HTTPException(status_code=400, detail="Название должно содержать минимум 2 символа")
+    conversation = Conversation(kind=payload.kind, title=title, owner_id=user.id)
+    db.add(conversation)
+    db.flush()
+    db.add(Participant(conversation_id=conversation.id, user_id=user.id))
+    db.commit()
+    return {"id": conversation.id, "kind": conversation.kind, "title": conversation.title, "owner_id": user.id}
+
+
+@app.post("/conversations/{conversation_id}/members")
+def add_conversation_member(conversation_id: int, payload: DirectConversationRequest,
+                            db: Session = Depends(get_db), user: User = Depends(current_user)):
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation or conversation.kind not in {"group", "channel"}:
+        raise HTTPException(status_code=404, detail="Группа или канал не найдены")
+    if conversation.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Добавлять участников может только владелец")
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not participant(db, conversation_id, target.id):
+        db.add(Participant(conversation_id=conversation_id, user_id=target.id))
+        db.commit()
+    return {"ok": True, "conversation_id": conversation_id, "user_id": target.id}
+
+
 @app.post("/conversations/direct")
 def create_direct(payload: DirectConversationRequest, db: Session = Depends(get_db),
                   user: User = Depends(current_user)):
@@ -1313,6 +1355,9 @@ async def send_message(conversation_id: int, payload: MessageRequest,
                        db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not participant(db, conversation_id, user.id):
         raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    conversation = db.get(Conversation, conversation_id)
+    if conversation and conversation.kind == "channel" and conversation.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Публиковать в канале может только владелец")
     if payload.reply_to_id is not None:
         parent = db.get(Message, payload.reply_to_id)
         if not parent or parent.conversation_id != conversation_id or parent.deleted_at:
