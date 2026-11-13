@@ -633,7 +633,15 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
             f"Новая дата окончания: {target.premium_until.strftime('%d.%m.%Y %H:%M UTC') if target.premium_until else 'не активен'}",
         ])
     event_lines.append(f"Время операции: {account_event_time()}")
-    if payload.stars_delta or payload.premium_days:
+    if payload.stars_delta > 0:
+        topup_event = {
+            "type": "stars_topup",
+            "amount": payload.stars_delta,
+            "balance": target.stars_balance,
+            "time": account_event_time(),
+        }
+        add_saved_system_message(db, target, "LG_EVENT:" + json.dumps(topup_event, ensure_ascii=False))
+    elif payload.stars_delta < 0 or payload.premium_days:
         add_saved_system_message(db, target, "\\n".join(event_lines))
     return {"user_id": target.id, "stars_balance": target.stars_balance,
             "premium_until": target.premium_until.isoformat() if target.premium_until else None}
