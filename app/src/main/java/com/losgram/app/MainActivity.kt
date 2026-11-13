@@ -842,24 +842,122 @@ private fun SettingsEntry(
             if (expanded == key) Text("⌃", color = Muted, fontSize = 20.sp)
         }
         if (expanded == key) {
-            Text(
-                when (key) {
-                    "Устройства" -> "Здесь будет список активных устройств и возможность завершить сеанс."
-                    "Конфиденциальность" -> "Настройте видимость номера, времени посещения и доступ к аккаунту."
-                    "Уведомления" -> "Настройки звуков и уведомлений будут подключены отдельно."
-                    "Данные и память" -> "Управление автозагрузкой фото, видео и очисткой кэша."
-                    "Папки с чатами" -> "Создавайте папки и распределяйте переписки по категориям."
-                    "Энергосбережение" -> "Настройки анимации и фоновой активности для экономии заряда."
-                    "Язык" -> "Сейчас выбран русский язык."
-                    "Аккаунт" -> "Изменение имени, username, номера и описания профиля доступно в разделе «Профиль»."
-                    "LosGram Premium" -> "Подписка пока управляется владельцем вручную. Покупка не подключена."
-                    "Звёзды LosGram" -> "Начисление звёзд выполняется владельцем через панель владельца."
-                    "LosGram для бизнеса" -> "Настройки бизнес-профиля доступны в профиле LosGram."
-                    else -> "Раздел интерфейса LosGram. Подключение дополнительных функций будет следующим этапом."
-                },
-                color = Muted, fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth().padding(start = 60.dp, end = 8.dp, bottom = 10.dp)
-            )
+            SettingsDetail(key)
+        }
+    }
+}
+
+
+@Composable
+private fun SettingsDetail(key: String) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("losgram_settings", Context.MODE_PRIVATE) }
+    var chatAnimations by remember { mutableStateOf(prefs.getBoolean("chat_animations", true)) }
+    var linkPreviews by remember { mutableStateOf(prefs.getBoolean("link_previews", true)) }
+    var sound by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
+    var vibration by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
+    var autoDownload by remember { mutableStateOf(prefs.getBoolean("auto_download", false)) }
+    var saveToGallery by remember { mutableStateOf(prefs.getBoolean("save_gallery", false)) }
+    var energySave by remember { mutableStateOf(prefs.getBoolean("energy_save", false)) }
+    var language by remember { mutableStateOf(prefs.getString("language", "Русский") ?: "Русский") }
+    var folderMode by remember { mutableStateOf(prefs.getString("folder_mode", "Все чаты") ?: "Все чаты") }
+    var helpText by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxWidth().padding(start = 60.dp, end = 8.dp, bottom = 12.dp)
+        .clip(RoundedCornerShape(14.dp)).background(Panel).padding(12.dp)) {
+        when (key) {
+            "Настройки чатов" -> {
+                PreferenceSwitch("Анимации интерфейса", "Плавные переходы и эффекты", chatAnimations) {
+                    chatAnimations = it; prefs.edit().putBoolean("chat_animations", it).apply()
+                }
+                Divider(color = Navy)
+                PreferenceSwitch("Предпросмотр ссылок", "Показывать карточки ссылок в чатах", linkPreviews) {
+                    linkPreviews = it; prefs.edit().putBoolean("link_previews", it).apply()
+                }
+            }
+            "Уведомления" -> {
+                PreferenceSwitch("Звуки", "Звуки сообщений и действий", sound) {
+                    sound = it; prefs.edit().putBoolean("sound_enabled", it).apply()
+                }
+                Divider(color = Navy)
+                PreferenceSwitch("Вибрация", "Виброотклик при уведомлениях", vibration) {
+                    vibration = it; prefs.edit().putBoolean("vibration_enabled", it).apply()
+                }
+            }
+            "Данные и память" -> {
+                PreferenceSwitch("Автозагрузка медиа", "Автоматически загружать фото и видео", autoDownload) {
+                    autoDownload = it; prefs.edit().putBoolean("auto_download", it).apply()
+                }
+                Divider(color = Navy)
+                PreferenceSwitch("Сохранять в галерею", "Сохранять полученные медиафайлы", saveToGallery) {
+                    saveToGallery = it; prefs.edit().putBoolean("save_gallery", it).apply()
+                }
+                Text("Очистка кэша станет доступна после подключения локального хранилища медиа.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            "Папки с чатами" -> {
+                Text("Показывать", color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                listOf("Все чаты", "Личные", "Непрочитанные", "Избранное").forEach { option ->
+                    Row(Modifier.fillMaxWidth().clickable {
+                        folderMode = option; prefs.edit().putString("folder_mode", option).apply()
+                    }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(folderMode == option, onClick = {
+                            folderMode = option; prefs.edit().putString("folder_mode", option).apply()
+                        }, colors = RadioButtonDefaults.colors(selectedColor = Blue))
+                        Text(option, color = White, fontSize = 14.sp)
+                    }
+                }
+                Text("Это быстрые фильтры интерфейса; создание пользовательских папок добавим отдельно.",
+                    color = Muted, fontSize = 12.sp)
+            }
+            "Энергосбережение" -> {
+                PreferenceSwitch("Экономия энергии", "Отключать часть визуальных эффектов", energySave) {
+                    energySave = it; prefs.edit().putBoolean("energy_save", it).apply()
+                    if (it) {
+                        chatAnimations = false
+                        prefs.edit().putBoolean("chat_animations", false).apply()
+                    }
+                }
+            }
+            "Язык" -> {
+                listOf("Русский", "English").forEach { option ->
+                    Row(Modifier.fillMaxWidth().clickable {
+                        language = option; prefs.edit().putString("language", option).apply()
+                    }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(language == option, onClick = {
+                            language = option; prefs.edit().putString("language", option).apply()
+                        }, colors = RadioButtonDefaults.colors(selectedColor = Blue))
+                        Text(option, color = White, fontSize = 14.sp)
+                    }
+                }
+                Text("Выбор сохраняется на устройстве. Полный перевод экранов подключим отдельно.",
+                    color = Muted, fontSize = 12.sp)
+            }
+            "Устройства" -> Text("Сейчас открыт этот аккаунт на данном устройстве. Управление другими сеансами появится после добавления API сеансов.",
+                color = Muted, fontSize = 13.sp)
+            "Конфиденциальность" -> Text("Настройки показа номера и времени посещения доступны в разделе редактирования профиля.",
+                color = Muted, fontSize = 13.sp)
+            "Аккаунт" -> Text("Изменить имя, username, описание и фото можно во вкладке «Профиль».",
+                color = Muted, fontSize = 13.sp)
+            "LosGram Premium" -> Text("Premium пока начисляется владельцем вручную. Покупка не подключена.",
+                color = Muted, fontSize = 13.sp)
+            "Звёзды LosGram" -> Text("Баланс и ручные начисления доступны владельцу в панели выше.",
+                color = Muted, fontSize = 13.sp)
+            "LosGram для бизнеса" -> Text("Данные бизнес-профиля можно изменить во вкладке «Профиль».",
+                color = Muted, fontSize = 13.sp)
+            "Отправить подарок" -> Text("Отправка подарков появится после реализации каталога подарков и списания звёзд.",
+                color = Muted, fontSize = 13.sp)
+            "Задать вопрос" -> {
+                OutlinedTextField(helpText, { helpText = it }, Modifier.fillMaxWidth(),
+                    label = { Text("Ваш вопрос") }, minLines = 2)
+                Text("Отправка обращений появится после подключения поддержки.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+            }
+            "Вопросы о LosGram" -> Text("LosGram — мессенджер с входом через Telegram-бота, профилями и переписками.",
+                color = Muted, fontSize = 13.sp)
+            "Возможности LosGram" -> Text("Доступны аккаунт, профиль, переписки, настройки приватности и панель владельца.",
+                color = Muted, fontSize = 13.sp)
+            "Политика конфиденциальности" -> Text("Данные аккаунта используются для работы LosGram. Не передавайте никому код входа.",
+                color = Muted, fontSize = 13.sp)
         }
     }
 }
