@@ -1,6 +1,8 @@
 package com.losgram.app
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.graphics.BitmapFactory
@@ -535,6 +537,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     var editing by remember { mutableStateOf<MessageItem?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     suspend fun reload() {
         val response = api("/conversations/\${chat.id}/messages", session.token)
@@ -650,6 +653,21 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
             confirmButton = {
                 Row {
                     TextButton(onClick = { replyTo = message; editing = null; draft = ""; selectedMessage = null }) { Text("Ответить") }
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("LosGram", message.body))
+                        selectedMessage = null
+                    }) { Text("Копировать") }
+                    TextButton(onClick = {
+                        selectedMessage = null
+                        scope.launch {
+                            try {
+                                api("/conversations/\${chat.id}/messages/\${message.id}/forward-to-saved", session.token, "POST", JSONObject())
+                                error = "Переслано в Избранное"
+                                reload()
+                            } catch (e: Exception) { error = e.message ?: "Не удалось переслать сообщение" }
+                        }
+                    }) { Text("В Избранное") }
                     if (message.mine) {
                         TextButton(onClick = { editing = message; replyTo = null; draft = message.body; selectedMessage = null }) { Text("Изменить") }
                         TextButton(onClick = {
