@@ -302,7 +302,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
             try {
                 val result = api("/users/search?q=" + Uri.encode(search.trim()), session.token)
                 val arr = result.optJSONArray("items") ?: JSONArray()
-                searchResults = (0 until arr.length()).map {
+                searchResults = (if (search.trim().removePrefix("@").equals("LosGramBotFather", true)) listOf(-1 to "LosGram BotFather") else emptyList()) + (0 until arr.length()).map {
                     val user = arr.getJSONObject(it)
                     user.optInt("id") to user.optString("display_name", "Пользователь")
                 }
@@ -385,7 +385,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     searchResults.forEach { (userId, name) ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                scope.launch {
+                                if (userId == -1) {
+                                    selectedChat = ChatItem(-1, "LosGram BotFather", "Помощник по созданию ботов")
+                                    searchOpen = false; searchResults = emptyList(); search = ""
+                                } else scope.launch {
                                     try {
                                         val result = api("/conversations/direct", session.token, "POST",
                                             JSONObject().put("user_id", userId))
