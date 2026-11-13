@@ -108,6 +108,29 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+
+class Bot(Base):
+    __tablename__ = "bots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    description: Mapped[str] = mapped_column(String(512), default="")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(24))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    webhook_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class BotUpdate(Base):
+    __tablename__ = "bot_updates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id"), index=True)
+    update_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 Base.metadata.create_all(bind=engine)
 from sqlalchemy import inspect
 # Upgrade legacy users tables in-place; create_all only creates missing tables.
@@ -269,6 +292,22 @@ class AdminGrantRequest(BaseModel):
     user_id: int
     stars_delta: int = Field(default=0, ge=-1000000, le=1000000)
     premium_days: int = Field(default=0, ge=-36500, le=36500)
+
+
+
+class BotCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=64)
+    username: str = Field(min_length=5, max_length=32, pattern=r"^[a-zA-Z][a-zA-Z0-9_]{3,30}bot$")
+    description: str = Field(default="", max_length=512)
+
+
+class BotWebhookRequest(BaseModel):
+    url: str | None = Field(default=None, max_length=500)
+
+
+class BotSendMessageRequest(BaseModel):
+    conversation_id: int
+    text: str = Field(min_length=1, max_length=10000)
 
 
 class DirectConversationRequest(BaseModel):
@@ -656,6 +695,122 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
         add_saved_system_message(db, target, "\\n".join(event_lines))
     return {"user_id": target.id, "stars_balance": target.stars_balance,
             "premium_until": target.premium_until.isoformat() if target.premium_until else None}
+
+
+
+def bot_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def owned_bot(db: Session, bot_id: int, owner: User) -> Bot:
+    bot = db.get(Bot, bot_id)
+    if not bot or bot.owner_id != owner.id:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    return bot
+
+
+def bot_from_api_token(token: str, db: Session) -> Bot:
+    if len(token) < 40 or len(token) > 160:
+        raise HTTPException(status_code=401, detail="Недействительный токен бота")
+    bot = db.scalar(select(Bot).where(Bot.token_hash == bot_token_hash(token)))
+    if not bot or not bot.is_active:
+        raise HTTPException(status_code=401, detail="Токен недействителен или бот отключён")
+    return bot
+
+
+@app.post("/bots")
+def create_bot(payload: BotCreateRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    username = payload.username.lower()
+    if db.scalar(select(Bot.id).where(Bot.username == username)):
+        raise HTTPException(status_code=409, detail="Этот username уже занят")
+    token = f"lg_{secrets.token_hex(4)}_{secrets.token_urlsafe(32)}"
+    bot = Bot(owner_id=user.id, name=payload.name.strip(), username=username,
+              description=payload.description.strip(), token_hash=bot_token_hash(token), token_prefix=token[:12])
+    db.add(bot)
+    db.commit()
+    db.refresh(bot)
+    return {"id": bot.id, "name": bot.name, "username": bot.username, "description": bot.description,
+            "token": token, "token_notice": "Сохраните токен сейчас. Повторно показать его нельзя.",
+            "is_active": bot.is_active, "created_at": bot.created_at.isoformat()}
+
+
+@app.get("/bots")
+def list_my_bots(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    bots = db.scalars(select(Bot).where(Bot.owner_id == user.id).order_by(Bot.id.desc())).all()
+    return {"items": [{"id": b.id, "name": b.name, "username": b.username, "description": b.description,
+        "token_prefix": b.token_prefix, "is_active": b.is_active, "webhook_url": b.webhook_url,
+        "created_at": b.created_at.isoformat()} for b in bots]}
+
+
+@app.patch("/bots/{bot_id}/webhook")
+def set_bot_webhook(bot_id: int, payload: BotWebhookRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    bot = owned_bot(db, bot_id, user)
+    if payload.url:
+        from urllib.parse import urlparse
+        parsed = urlparse(payload.url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise HTTPException(status_code=400, detail="Webhook должен быть HTTPS URL")
+    bot.webhook_url = payload.url
+    db.commit()
+    return {"ok": True, "webhook_url": bot.webhook_url}
+
+
+@app.post("/bots/{bot_id}/revoke")
+def revoke_bot_token(bot_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    bot = owned_bot(db, bot_id, user)
+    token = f"lg_{secrets.token_hex(4)}_{secrets.token_urlsafe(32)}"
+    bot.token_hash, bot.token_prefix = bot_token_hash(token), token[:12]
+    db.commit()
+    return {"ok": True, "token": token, "token_notice": "Старый токен отозван. Сохраните новый токен сейчас."}
+
+
+@app.post("/bots/{bot_id}/disable")
+def disable_bot(bot_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    bot = owned_bot(db, bot_id, user)
+    bot.is_active = False
+    db.commit()
+    return {"ok": True, "is_active": False}
+
+
+@app.post("/bots/{bot_id}/enable")
+def enable_bot(bot_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    bot = owned_bot(db, bot_id, user)
+    bot.is_active = True
+    db.commit()
+    return {"ok": True, "is_active": True}
+
+
+@app.post("/botapi/{token}/sendMessage")
+def bot_api_send_message(token: str, payload: BotSendMessageRequest, db: Session = Depends(get_db)):
+    bot = bot_from_api_token(token, db)
+    if not participant(db, payload.conversation_id, bot.owner_id):
+        raise HTTPException(status_code=403, detail="Бот может писать только в чаты владельца")
+    message = Message(conversation_id=payload.conversation_id, sender_id=bot.owner_id, body=f"🤖 {bot.name}: {payload.text}")
+    db.add(message)
+    db.flush()
+    result = {"message_id": message.id, "conversation_id": message.conversation_id,
+        "from": {"id": bot.id, "is_bot": True, "username": bot.username},
+        "text": payload.text, "date": message.created_at.isoformat() if message.created_at else datetime.now(timezone.utc).isoformat()}
+    db.add(BotUpdate(bot_id=bot.id, update_json=json.dumps({"update_id": message.id, "message": result}, ensure_ascii=False)))
+    db.commit()
+    return {"ok": True, "result": result}
+
+
+@app.get("/botapi/{token}/getUpdates")
+def bot_api_get_updates(token: str, offset: int | None = None, limit: int = 100, db: Session = Depends(get_db)):
+    bot = bot_from_api_token(token, db)
+    query = select(BotUpdate).where(BotUpdate.bot_id == bot.id)
+    if offset is not None:
+        query = query.where(BotUpdate.id >= offset)
+    rows = db.scalars(query.order_by(BotUpdate.id).limit(min(max(limit, 1), 100))).all()
+    return {"ok": True, "result": [json.loads(row.update_json) for row in rows]}
+
+
+@app.get("/botapi/{token}/getMe")
+def bot_api_get_me(token: str, db: Session = Depends(get_db)):
+    bot = bot_from_api_token(token, db)
+    return {"ok": True, "result": {"id": bot.id, "is_bot": True, "first_name": bot.name,
+        "username": bot.username, "description": bot.description}}
 
 
 @app.get("/users/search")
