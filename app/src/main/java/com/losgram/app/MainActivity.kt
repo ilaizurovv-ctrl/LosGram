@@ -782,6 +782,7 @@ private fun ProfileSettingsScreen(
                                 }
                             }
                         }
+                    }
                     if (message.isNotBlank()) item {
                         Text(message, color = if (message.contains("сохран")) Blue else Color(0xFFFF7777),
                             modifier = Modifier.padding(vertical = 10.dp))
