@@ -670,7 +670,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                             }).padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 7.dp)) {
                             message.replyToBody?.takeIf { it.isNotBlank() }?.let {
                                 Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                                    .clip(RoundedCornerShape(5.dp)).background(Color(0x223FFFFFFF))
+                                    .clip(RoundedCornerShape(5.dp)).background(Color(0x22FFFFFF))
                                     .padding(start = 8.dp, top = 5.dp, bottom = 5.dp)) {
                                     Text("Ответ", color = Color(0xFF9CC7E8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                     Text(it, color = Color(0xFFD7E3EC), fontSize = 12.sp, maxLines = 2)
