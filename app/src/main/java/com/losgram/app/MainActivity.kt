@@ -491,6 +491,38 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
 }
 
 @Composable
+private fun StarsTopUpNotice(event: JSONObject) {
+    val amount = event.optInt("amount")
+    val balance = event.optInt("balance")
+    val time = event.optString("time")
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color(0xFF171717))
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("⭐", fontSize = 58.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("Звёзды успешно зачислены!", color = White, fontSize = 18.sp,
+            fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text("+$amount ⭐", color = Color(0xFFFFD76A), fontSize = 34.sp,
+            fontWeight = FontWeight.ExtraBold)
+        Text("Пополнение баланса LosGram", color = White, fontSize = 14.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Color(0xFF383838))
+        Spacer(Modifier.height(12.dp))
+        Text("Текущий баланс", color = Muted, fontSize = 13.sp)
+        Text("$balance ⭐", color = Color(0xFFFFD76A), fontSize = 22.sp,
+            fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text(time, color = Muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
 private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: () -> Unit) {
     var messages by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
@@ -538,12 +570,21 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                 CircularProgressIndicator(color = Blue)
             } else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)) {
                 items(messages, key = { it.id }) { message ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement =
-                        if (message.mine) Arrangement.End else Arrangement.Start) {
-                        Text(message.body, color = White,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                                .background(if (message.mine) Color(0xFF245B87) else Panel,
-                                    RoundedCornerShape(14.dp)).padding(12.dp))
+                    val event = remember(message.body) {
+                        if (message.body.startsWith("LG_EVENT:")) {
+                            try { JSONObject(message.body.removePrefix("LG_EVENT:")) } catch (_: Exception) { null }
+                        } else null
+                    }
+                    if (event?.optString("type") == "stars_topup") {
+                        StarsTopUpNotice(event)
+                    } else {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement =
+                            if (message.mine) Arrangement.End else Arrangement.Start) {
+                            Text(message.body, color = White,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                                    .background(if (message.mine) Color(0xFF245B87) else Panel,
+                                        RoundedCornerShape(14.dp)).padding(12.dp))
+                        }
                     }
                 }
             }
