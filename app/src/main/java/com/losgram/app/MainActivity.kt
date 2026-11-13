@@ -531,6 +531,25 @@ private fun StarsTopUpNotice(event: JSONObject) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: () -> Unit) {
+    if (chat.id == -1) {
+        Column(Modifier.fillMaxSize().background(Navy)) {
+            Row(Modifier.fillMaxWidth().height(64.dp).background(Panel).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 30.sp, modifier = Modifier.clickable { onBack() }.padding(end = 18.dp))
+                Column {
+                    Text("LosGram BotFather", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text("помощник по созданию ботов", color = Muted, fontSize = 12.sp)
+                }
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Text("Привет! Я помогу создавать ботов LosGram. Доступные команды:", color = White)
+                listOf("/start", "/help", "/newbot", "/mybots", "/token", "/revoke").forEach {
+                    Text(it, color = Blue, modifier = Modifier.padding(vertical = 5.dp))
+                }
+                BotFatherPanel(session)
+            }
+        }
+        return
+    }
     var messages by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
