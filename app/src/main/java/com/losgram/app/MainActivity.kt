@@ -2102,13 +2102,13 @@ private suspend fun downloadAdminGiftImage(giftId: String, token: String): andro
 }
 
 @Composable
-private fun TelegramGiftCard(gift: JSONObject, token: String) {
+private fun TelegramGiftCard(gift: JSONObject, token: String, onSelect: () -> Unit) {
     var bitmap by remember(gift.optString("id")) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(gift.optString("id"), token) {
         bitmap = try { downloadAdminGiftImage(gift.optString("id"), token) } catch (_: Exception) { null }
     }
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
-        .background(Navy).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        .background(Navy).clickable(onClick = onSelect).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = gift.optString("title"),
             modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)))
         else Box(Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentAlignment = Alignment.Center) {
@@ -2120,6 +2120,7 @@ private fun TelegramGiftCard(gift: JSONObject, token: String) {
             Text(gift.optString("name", "🎁") + " · Базовый, не улучшен", color = Muted, fontSize = 12.sp)
             Text("⭐ ${gift.optInt("stars")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
             if (gift.optBoolean("limited")) Text("Ограниченный · осталось ${gift.optString("remaining", "?")}", color = Muted, fontSize = 11.sp)
+            Text("Нажми, чтобы задать цену и количество", color = Color(0xFFC5A6FF), fontSize = 11.sp)
         }
     }
 }
@@ -2143,6 +2144,9 @@ private fun OwnerPanel(session: LoginSession) {
     var telegramGifts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var telegramCatalogStatus by remember { mutableStateOf("") }
     var catalogExpanded by remember { mutableStateOf(false) }
+    var selectedTelegramGift by remember { mutableStateOf<JSONObject?>(null) }
+    var telegramListingPrice by remember { mutableStateOf("") }
+    var telegramListingQuantity by remember { mutableStateOf("1") }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.token) {
         try { isAdmin = api("/admin/users?q=", session.token).optJSONArray("items") != null }
@@ -2194,7 +2198,44 @@ private fun OwnerPanel(session: LoginSession) {
                 Text("Скрыть", color = Muted, modifier = Modifier.clickable { catalogExpanded = false }.padding(6.dp))
             }
             if (telegramGifts.isEmpty()) Text("Подарков сейчас нет или Telegram не вернул доступные позиции.", color = Muted, fontSize = 12.sp)
-            else telegramGifts.forEach { gift -> TelegramGiftCard(gift, session.token) }
+            else telegramGifts.forEach { gift -> TelegramGiftCard(gift, session.token) { selectedTelegramGift = gift; telegramListingPrice = ""; telegramListingQuantity = "1" } }
+            selectedTelegramGift?.let { gift ->
+                AlertDialog(
+                    onDismissRequest = { if (!busy) selectedTelegramGift = null },
+                    title = { Text(gift.optString("title", "Подарок Telegram")) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Базовый NFT без улучшений. Укажи цену в ⭐ и количество копий для маркетплейса.", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(telegramListingPrice, { telegramListingPrice = it.filter(Char::isDigit).take(8) },
+                                label = { Text("Цена за 1 NFT (⭐)") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                            OutlinedTextField(telegramListingQuantity, { telegramListingQuantity = it.filter(Char::isDigit).take(3) },
+                                label = { Text("Количество (1–100)") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                            Text("Улучшения покупателю пока не выдаются.", color = Color(0xFFFFC36B), fontSize = 12.sp)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(enabled = !busy && (telegramListingPrice.toIntOrNull() ?: 0) > 0 &&
+                            (telegramListingQuantity.toIntOrNull() ?: 0) in 1..100, onClick = {
+                            scope.launch {
+                                busy = true
+                                try {
+                                    val result = api("/admin/telegram/gifts/${Uri.encode(gift.optString("id"))}/publish",
+                                        session.token, "POST",
+                                        JSONObject().put("price", telegramListingPrice.toInt())
+                                            .put("quantity", telegramListingQuantity.toInt()))
+                                    telegramCatalogStatus = "Выставлено NFT: ${result.optInt("created")} по ${telegramListingPrice} ⭐ за штуку. Все без улучшений."
+                                    selectedTelegramGift = null
+                                } catch (e: Exception) {
+                                    telegramCatalogStatus = e.message ?: "Не удалось выставить NFT"
+                                } finally { busy = false }
+                            }
+                        }) { Text("Выставить на продажу") }
+                    },
+                    dismissButton = { TextButton(onClick = { selectedTelegramGift = null }, enabled = !busy) { Text("Отмена") } }
+                )
+            }
             Text("Bot API показывает доступные боту базовые подарки. Коллекционные номера и редкие варианты Telegram здесь не представлены.",
                 color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 6.dp))
         }
