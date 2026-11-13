@@ -840,16 +840,8 @@ private fun ProfileSettingsScreen(
                                     color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 Spacer(Modifier.height(8.dp))
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    if (premiumActive) {
-                                        Text("✦ PREMIUM", color = Color(0xFFFFD76A), fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                                                .background(Color(0xFF594A2A)).padding(horizontal = 10.dp, vertical = 5.dp))
-                                    } else {
-                                        Text("LosGram", color = Muted, fontSize = 11.sp)
-                                    }
-                                }
+                                Text("LosGram", color = Muted, fontSize = 11.sp,
+                                    modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 Spacer(Modifier.height(10.dp))
                                 Spacer(Modifier.height(14.dp))
                                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(vertical = 14.dp),
@@ -1075,7 +1067,7 @@ private fun LosGramMarketScreen(onBack: () -> Unit, balance: Int = 0) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = White, fontSize = 34.sp, modifier = Modifier.clickable { onBack() }.padding(end = 16.dp))
-                Text("Настройки", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("Отправить подарок", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Баланс", color = White, fontSize = 14.sp)
@@ -1094,20 +1086,20 @@ private fun LosGramMarketScreen(onBack: () -> Unit, balance: Int = 0) {
                 Spacer(Modifier.height(28.dp))
                 Box(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF242424)).padding(horizontal = 24.dp, vertical = 10.dp)) { Text("Все", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                 Spacer(Modifier.height(26.dp))
-                Text("Коллекционные подарки", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
+                Text("Коллекционные NFT-подарки", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp))
                 val collectibles = listOf("Neon Cat" to "🐱", "Golden Ghost" to "👻", "Pixel Dragon" to "🐉", "Royal Crown" to "👑")
                 collectibles.chunked(2).forEach { rowItems ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         rowItems.forEach { item ->
-                            Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF151515)).padding(vertical = 14.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF151515))
+                                .padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(item.second, fontSize = 62.sp)
                                 Spacer(Modifier.height(8.dp))
                                 Text(item.first, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                Text("NFT-подарок", color = Muted, fontSize = 12.sp)
+                                Text("Коллекционный подарок", color = Muted, fontSize = 12.sp)
                             }
                         }
-                        repeat(2 - rowItems.size) { Spacer(Modifier.weight(1f)) }
                     }
                     Spacer(Modifier.height(12.dp))
                 }
