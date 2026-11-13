@@ -977,6 +977,8 @@ private fun ProfileSettingsScreen(
                                     "Дополнительные возможности подписки", "LosGram Premium", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
                                     "Баланс и начисления звёзд", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🤖", Color(0xFF229ED9), "BotFather", "Создание ботов и Bot API", "BotFather", expandedSetting) { expandedSetting = it }
+                                if (expandedSetting == "BotFather") item { BotFatherPanel(session) }
                                 SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
                                     "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
@@ -1012,6 +1014,80 @@ private fun ProfileSettingsScreen(
             }
         }
     }
+}
+
+
+@Composable
+private fun BotFatherPanel(session: LoginSession) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var bots by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var name by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    fun loadBots() { scope.launch {
+        busy = true
+        try {
+            val a = api("/bots", session.token).optJSONArray("items") ?: JSONArray()
+            bots = (0 until a.length()).map { a.getJSONObject(it) }; status = ""
+        } catch (e: Exception) { status = e.message ?: "Ошибка загрузки" }
+        finally { busy = false }
+    } }
+    LaunchedEffect(session.token) { loadBots() }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Text("LOS GRAM BOTFATHER", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Создавайте ботов LosGram и управляйте их API.", color = Muted, fontSize = 13.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("Создать бота", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Название") })
+        OutlinedTextField(username, { username = it.removePrefix("@").filter { c -> c.isLetterOrDigit() || c == '_' }.take(32) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Username (оканчивается на bot)") })
+        OutlinedTextField(description, { description = it.take(512) }, Modifier.fillMaxWidth(), minLines = 2, label = { Text("Описание") })
+        Button(onClick = { scope.launch {
+            busy = true
+            try {
+                val res = api("/bots", session.token, "POST", JSONObject().put("name", name.trim()).put("username", username.trim()).put("description", description.trim()))
+                token = res.optString("token"); name = ""; username = ""; description = ""; loadBots()
+            } catch (e: Exception) { status = e.message ?: "Ошибка"; busy = false }
+        } }, enabled = !busy && name.trim().length >= 2 && username.endsWith("bot", true), modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Создать бота") }
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Мои боты", color = White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+            Text("Обновить ↻", color = Blue, modifier = Modifier.clickable { loadBots() }.padding(8.dp))
+        }
+        if (bots.isEmpty()) Text("Пока нет созданных ботов", color = Muted)
+        bots.forEach { b ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(Panel).padding(12.dp)) {
+                Text(b.optString("name"), color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("@${b.optString("username")} · ${if (b.optBoolean("is_active")) "Активен" else "Отключён"}", color = Blue, fontSize = 13.sp)
+                Text(b.optString("description"), color = Muted, fontSize = 12.sp)
+                Text("Токен: ${b.optString("token_prefix")}••••", color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Отозвать токен", color = Blue, modifier = Modifier.clickable { scope.launch {
+                        try { token = api("/bots/${b.optInt("id")}/revoke", session.token, "POST", JSONObject()).optString("token") }
+                        catch (e: Exception) { status = e.message ?: "Ошибка" }
+                    } }.padding(vertical = 8.dp))
+                    Text(if (b.optBoolean("is_active")) "Отключить" else "Включить", color = Blue, modifier = Modifier.clickable { scope.launch {
+                        try { api("/bots/${b.optInt("id")}/${if (b.optBoolean("is_active")) "disable" else "enable"}", session.token, "POST", JSONObject()); loadBots() }
+                        catch (e: Exception) { status = e.message ?: "Ошибка" }
+                    } }.padding(vertical = 8.dp))
+                }
+            }
+        }
+        if (status.isNotBlank()) Text(status, color = Color(0xFFFF7777), fontSize = 12.sp)
+        Text("Команды BotFather: /start, /help, /newbot, /mybots, /token, /revoke, /setdescription, /setabouttext, /setuserpic, /deletebot. Реализация команд расширяется поэтапно.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+        Text("Bot API: /getMe · /sendMessage · /getUpdates", color = Muted, fontSize = 12.sp)
+    }
+    if (token.isNotBlank()) AlertDialog(onDismissRequest = { token = "" }, title = { Text("Токен бота") },
+        text = { Column { Text("Сохраните токен сейчас — повторно показать его нельзя.", color = Muted); Text(token, color = White) } },
+        confirmButton = { TextButton(onClick = {
+            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cb.setPrimaryClip(ClipData.newPlainText("LosGram Bot Token", token)); token = ""
+        }) { Text("Скопировать и закрыть") } },
+        dismissButton = { TextButton(onClick = { token = "" }) { Text("Закрыть") } })
 }
 
 @Composable
