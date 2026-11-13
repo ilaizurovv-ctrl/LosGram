@@ -109,6 +109,18 @@ class Message(Base):
 
 
 
+class CollectibleGift(Base):
+    __tablename__ = "collectible_gifts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    model: Mapped[str] = mapped_column(String(80))
+    background: Mapped[str] = mapped_column(String(80))
+    pattern: Mapped[str] = mapped_column(String(80))
+    number: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Bot(Base):
     __tablename__ = "bots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -286,6 +298,14 @@ class SettingsUpdate(BaseModel):
 class BusinessProfileUpdate(BaseModel):
     business_name: str = Field(min_length=2, max_length=120)
     business_description: str | None = Field(default=None, max_length=500)
+
+
+class AdminGiftGrantRequest(BaseModel):
+    user_id: int
+    name: str = Field(min_length=1, max_length=80)
+    model: str = Field(min_length=1, max_length=80)
+    background: str = Field(min_length=1, max_length=80)
+    pattern: str = Field(min_length=1, max_length=80)
 
 
 class AdminGrantRequest(BaseModel):
@@ -635,12 +655,13 @@ def admin_users(q: str = "", db: Session = Depends(get_db), admin: User = Depend
     query = select(User).order_by(User.id.desc())
     if term:
         query = query.where(or_(User.username.ilike(f"%{term}%"),
+                                User.losgram_id.ilike(f"%{term}%"),
                                 User.display_name.ilike(f"%{term}%"),
                                 User.virtual_number.ilike(f"%{term}%")))
     rows = db.scalars(query.limit(50)).all()
     now = datetime.now(timezone.utc)
     return {"items": [{
-        "id": x.id, "display_name": x.display_name, "username": x.username,
+        "id": x.id, "losgram_id": x.losgram_id, "display_name": x.display_name, "username": x.username,
         "virtual_number": x.virtual_number, "stars_balance": x.stars_balance,
         "premium_until": x.premium_until.isoformat() if x.premium_until else None,
         "premium_active": bool(x.premium_until and (x.premium_until.replace(tzinfo=timezone.utc)
@@ -696,6 +717,36 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
     return {"user_id": target.id, "stars_balance": target.stars_balance,
             "premium_until": target.premium_until.isoformat() if target.premium_until else None}
 
+
+
+
+@app.post("/admin/gifts/grant")
+def admin_grant_gift(payload: AdminGiftGrantRequest, db: Session = Depends(get_db),
+                     admin: User = Depends(require_admin)):
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    last_number = db.scalar(select(func.max(CollectibleGift.number))) or 0
+    gift = CollectibleGift(user_id=target.id, name=payload.name.strip(),
+        model=payload.model.strip(), background=payload.background.strip(),
+        pattern=payload.pattern.strip(), number=last_number + 1)
+    db.add(gift)
+    db.commit()
+    db.refresh(gift)
+    add_saved_system_message(db, target,
+        f"🎁 Вам выдан коллекционный NFT-подарок «{gift.name}» №{gift.number}. "
+        f"Модель: {gift.model}; фон: {gift.background}; узор: {gift.pattern}.")
+    return {"id": gift.id, "number": gift.number, "name": gift.name,
+            "model": gift.model, "background": gift.background, "pattern": gift.pattern}
+
+
+@app.get("/me/gifts")
+def my_collectible_gifts(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    gifts = db.scalars(select(CollectibleGift).where(
+        CollectibleGift.user_id == user.id).order_by(CollectibleGift.number.desc())).all()
+    return {"items": [{"id": g.id, "name": g.name, "model": g.model,
+        "background": g.background, "pattern": g.pattern, "number": g.number,
+        "created_at": g.created_at.isoformat()} for g in gifts]}
 
 
 def bot_token_hash(token: str) -> str:
