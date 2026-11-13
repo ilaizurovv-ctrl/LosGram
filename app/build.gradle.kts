@@ -11,8 +11,25 @@ android {
         applicationId = "com.losgram.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        create("release") {
+            val storeFilePath = System.getenv("LOS_GGRAM_KEYSTORE_FILE")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = System.getenv("LOS_GGRAM_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LOS_GGRAM_KEY_ALIAS")
+                keyPassword = System.getenv("LOS_GGRAM_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
