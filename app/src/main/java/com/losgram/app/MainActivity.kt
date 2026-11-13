@@ -787,6 +787,9 @@ private fun ProfileSettingsScreen(
     var premiumUntil by remember { mutableStateOf("") }
     var starsBalance by remember { mutableIntStateOf(0) }
     var collectibleGifts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var listingGift by remember { mutableStateOf<JSONObject?>(null) }
+    var listingPrice by remember { mutableStateOf("500") }
+    var listingBusy by remember { mutableStateOf(false) }
     var notifications by remember { mutableStateOf(true) }
     var showPhone by remember { mutableStateOf(false) }
     var showLastSeen by remember { mutableStateOf(true) }
@@ -993,7 +996,27 @@ private fun ProfileSettingsScreen(
                                                 Text("${gift.optString("model")} · ${gift.optString("background")}", color = Muted, fontSize = 12.sp)
                                                 Text("Узор: ${gift.optString("pattern")}", color = Muted, fontSize = 12.sp)
                                             }
-                                            Text("#${gift.optInt("number")}", color = Color(0xFFFFD76A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text("#" + gift.optInt("number"), color = Color(0xFFFFD76A), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                val activeListing = gift.optInt("listing_id", 0) > 0
+                                                Text(if (activeListing) "На продаже · ⭐ " + gift.optInt("listing_price") else "Выставить",
+                                                    color = if (activeListing) Color(0xFFFFD76A) else Blue, fontSize = 11.sp,
+                                                    modifier = Modifier.padding(top = 6.dp).clickable {
+                                                        if (activeListing) {
+                                                            scope.launch {
+                                                                try {
+                                                                    api("/me/gifts/" + gift.optInt("id") + "/listing", session.token, "DELETE")
+                                                                    val arr = api("/me/gifts", session.token).optJSONArray("items") ?: JSONArray()
+                                                                    collectibleGifts = (0 until arr.length()).map { arr.getJSONObject(it) }
+                                                                    message = "Объявление снято с продажи"
+                                                                } catch (e: Exception) { message = e.message ?: "Не удалось снять объявление" }
+                                                            }
+                                                        } else {
+                                                            listingGift = gift
+                                                            listingPrice = "500"
+                                                        }
+                                                    })
+                                            }
                                         }
                                     }
                                 }
@@ -1135,6 +1158,34 @@ private fun ProfileSettingsScreen(
                 }
             }
         }
+    }
+    listingGift?.let { gift ->
+        AlertDialog(onDismissRequest = { if (!listingBusy) listingGift = null },
+            title = { Text("Выставить NFT на продажу") },
+            text = { Column {
+                Text(gift.optString("name") + " №" + gift.optInt("number"))
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = listingPrice, onValueChange = { listingPrice = it.filter(Char::isDigit).take(8) },
+                    singleLine = true, label = { Text("Цена в звёздах ⭐") })
+                Text("После покупки звёзды автоматически поступят на ваш баланс.", color = Muted, fontSize = 12.sp)
+            } },
+            confirmButton = { TextButton(enabled = !listingBusy && (listingPrice.toIntOrNull() ?: 0) > 0,
+                onClick = {
+                    val price = listingPrice.toIntOrNull() ?: return@TextButton
+                    listingBusy = true
+                    scope.launch {
+                        try {
+                            api("/me/gifts/" + gift.optInt("id") + "/listing", session.token, "POST",
+                                JSONObject().put("price", price))
+                            val arr = api("/me/gifts", session.token).optJSONArray("items") ?: JSONArray()
+                            collectibleGifts = (0 until arr.length()).map { arr.getJSONObject(it) }
+                            message = "NFT выставлен на продажу за " + price + " ⭐"
+                            listingGift = null
+                        } catch (e: Exception) { message = e.message ?: "Не удалось выставить NFT" }
+                        finally { listingBusy = false }
+                    }
+                }) { Text(if (listingBusy) "Публикуем..." else "Выставить") } },
+            dismissButton = { TextButton(onClick = { listingGift = null }) { Text("Отмена") } })
     }
 }
 
