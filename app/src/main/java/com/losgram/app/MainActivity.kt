@@ -140,6 +140,26 @@ private suspend fun verifyLosGramLogin(virtualNumber: String, code: String): Log
 @Composable
 fun LosGramApp() {
     val context = LocalContext.current
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            busy = true
+            try {
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "file"
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Не удалось прочитать файл")
+                require(bytes.isNotEmpty() && bytes.size <= 4 * 1024 * 1024) { "Максимальный размер файла — 4 МБ" }
+                val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                api("/conversations/${chat.id}/attachments", session.token, "POST",
+                    JSONObject().put("file_name", name).put("mime_type", mime).put("content_base64", encoded))
+                reload()
+                error = ""
+            } catch (e: Exception) { error = e.message ?: "Не удалось отправить файл" }
+            finally { busy = false }
+        }
+    }
     var session by remember { mutableStateOf<LoginSession?>(null) }
     var checkingSession by remember { mutableStateOf(true) }
 
@@ -744,6 +764,10 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
             Row(Modifier.fillMaxWidth().background(Color(0xFF17212B)).imePadding()
                 .navigationBarsPadding().padding(horizontal = 9.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
+                Text("＋", color = Blue, fontSize = 27.sp,
+                    modifier = Modifier.clickable(enabled = !busy && editing == null) {
+                        attachmentPicker.launch(arrayOf("*/*"))
+                    }.padding(horizontal = 7.dp))
                 OutlinedTextField(value = draft, onValueChange = { value ->
                     draft = value
                     typingJob?.cancel()
