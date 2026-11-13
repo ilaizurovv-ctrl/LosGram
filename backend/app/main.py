@@ -186,6 +186,9 @@ with engine.begin() as connection:
     connection.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_messages_conversation_id ON messages (conversation_id)"
     )
+    # Legacy direct-message schema required recipient_id; conversations now identify recipients.
+    if engine.dialect.name == "postgresql" and "recipient_id" in _message_columns:
+        connection.exec_driver_sql("ALTER TABLE messages ALTER COLUMN recipient_id DROP NOT NULL")
 
 
 def get_db():
