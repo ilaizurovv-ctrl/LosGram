@@ -121,6 +121,18 @@ class CollectibleGift(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class NFTListing(Base):
+    __tablename__ = "nft_listings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gift_id: Mapped[int] = mapped_column(ForeignKey("collectible_gifts.id"), unique=True, index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    buyer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    price: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Bot(Base):
     __tablename__ = "bots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -306,6 +318,10 @@ class AdminGiftGrantRequest(BaseModel):
     model: str = Field(min_length=1, max_length=80)
     background: str = Field(min_length=1, max_length=80)
     pattern: str = Field(min_length=1, max_length=80)
+
+
+class NFTListingCreateRequest(BaseModel):
+    price: int = Field(ge=1, le=10000000)
 
 
 class AdminGrantRequest(BaseModel):
@@ -806,6 +822,115 @@ def diagnose_collectible_gifts(db: Session = Depends(get_db), admin: User = Depe
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Проверка NFT не пройдена: {type(exc).__name__}") from exc
+
+
+@app.post("/me/gifts/{gift_id}/listing")
+def create_nft_listing(gift_id: int, payload: NFTListingCreateRequest,
+                       db: Session = Depends(get_db), user: User = Depends(current_user)):
+    gift = db.scalar(select(CollectibleGift).where(
+        CollectibleGift.id == gift_id, CollectibleGift.user_id == user.id
+    ).with_for_update())
+    if not gift:
+        raise HTTPException(status_code=404, detail="NFT не найден в вашей коллекции")
+    listing = db.scalar(select(NFTListing).where(NFTListing.gift_id == gift.id).with_for_update())
+    if listing and listing.status == "active":
+        raise HTTPException(status_code=409, detail="Этот NFT уже выставлен на продажу")
+    if listing:
+        listing.seller_id = user.id
+        listing.buyer_id = None
+        listing.price = payload.price
+        listing.status = "active"
+        listing.created_at = datetime.now(timezone.utc)
+        listing.sold_at = None
+    else:
+        listing = NFTListing(gift_id=gift.id, seller_id=user.id, price=payload.price, status="active")
+        db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return {"id": listing.id, "gift_id": gift.id, "price": listing.price, "status": listing.status}
+
+
+@app.delete("/me/gifts/{gift_id}/listing")
+def cancel_nft_listing(gift_id: int, db: Session = Depends(get_db),
+                       user: User = Depends(current_user)):
+    listing = db.scalar(select(NFTListing).where(
+        NFTListing.gift_id == gift_id, NFTListing.seller_id == user.id,
+        NFTListing.status == "active"
+    ).with_for_update())
+    if not listing:
+        raise HTTPException(status_code=404, detail="Активное объявление не найдено")
+    listing.status = "cancelled"
+    db.commit()
+    return {"ok": True, "status": "cancelled"}
+
+
+@app.get("/market/nfts")
+def nft_market(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    rows = db.execute(
+        select(NFTListing, CollectibleGift, User)
+        .join(CollectibleGift, CollectibleGift.id == NFTListing.gift_id)
+        .join(User, User.id == NFTListing.seller_id)
+        .where(NFTListing.status == "active")
+        .order_by(NFTListing.created_at.desc())
+        .limit(100)
+    ).all()
+    return {"items": [{
+        "listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
+        "model": gift.model, "background": gift.background, "pattern": gift.pattern,
+        "number": gift.number, "price": listing.price, "seller_id": seller.id,
+        "seller_name": seller.display_name, "seller_username": seller.username,
+        "created_at": listing.created_at.isoformat(),
+        "is_mine": listing.seller_id == user.id,
+    } for listing, gift, seller in rows]}
+
+
+@app.post("/market/nfts/{listing_id}/buy")
+def buy_nft_listing(listing_id: int, db: Session = Depends(get_db),
+                    buyer: User = Depends(current_user)):
+    # Lock the listing, NFT and both wallets before changing ownership or balances.
+    listing = db.scalar(select(NFTListing).where(
+        NFTListing.id == listing_id, NFTListing.status == "active"
+    ).with_for_update())
+    if not listing:
+        raise HTTPException(status_code=404, detail="Объявление уже продано или снято")
+    if listing.seller_id == buyer.id:
+        raise HTTPException(status_code=400, detail="Нельзя купить собственный NFT")
+    gift = db.scalar(select(CollectibleGift).where(
+        CollectibleGift.id == listing.gift_id,
+        CollectibleGift.user_id == listing.seller_id
+    ).with_for_update())
+    if not gift:
+        listing.status = "cancelled"
+        db.commit()
+        raise HTTPException(status_code=409, detail="Владелец NFT изменился. Объявление снято")
+    seller = db.scalar(select(User).where(User.id == listing.seller_id).with_for_update())
+    locked_buyer = db.scalar(select(User).where(User.id == buyer.id).with_for_update())
+    if not seller or not locked_buyer:
+        raise HTTPException(status_code=404, detail="Покупатель или продавец не найден")
+    price = listing.price
+    if locked_buyer.stars_balance < price:
+        raise HTTPException(status_code=400, detail=f"Недостаточно звёзд. Нужно: {price} ⭐")
+
+    locked_buyer.stars_balance -= price
+    seller.stars_balance += price
+    gift.user_id = locked_buyer.id
+    listing.status = "sold"
+    listing.buyer_id = locked_buyer.id
+    listing.sold_at = datetime.now(timezone.utc)
+    db.commit()
+
+    # Account activity messages are added after the atomic trade has committed.
+    try:
+        add_saved_system_message(locked_buyer,
+            f"💎 Вы купили NFT «{gift.name}» №{gift.number} за {price} ⭐. Он добавлен в вашу коллекцию.")
+        add_saved_system_message(seller,
+            f"⭐ Ваш NFT «{gift.name}» №{gift.number} продан за {price} ⭐. Звёзды зачислены на баланс.")
+    except Exception:
+        db.rollback()
+    return {"ok": True, "listing_id": listing.id, "gift_id": gift.id,
+            "name": gift.name, "number": gift.number, "price": price,
+            "buyer_balance": locked_buyer.stars_balance,
+            "seller_balance": seller.stars_balance, "status": "sold"}
 
 
 @app.get("/me/gifts")
