@@ -843,19 +843,6 @@ private fun ProfileSettingsScreen(
                                     }
                                 }
                                 Spacer(Modifier.height(10.dp))
-                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel)
-                                    .clickable { onOpenSettings() }.padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Text("⭐", fontSize = 20.sp)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text("Звёзды", color = White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                                    Text(starsBalance.toString(), color = Color(0xFFFFD76A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                    Text("  ›", color = Muted, fontSize = 20.sp)
-                                }
-                                if (premiumActive && premiumUntil.isNotBlank()) {
-                                    Text("Premium действует до ${premiumUntil.take(10)}", color = Muted, fontSize = 11.sp,
-                                        modifier = Modifier.padding(top = 5.dp, start = 4.dp))
-                                }
                                 Spacer(Modifier.height(14.dp))
                                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(vertical = 14.dp),
                                     horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -1031,9 +1018,9 @@ private fun ProfileSettingsScreen(
                                 OwnerPanel(session)
                                 Spacer(Modifier.height(12.dp))
                                 SettingsEntry("⭐", Color(0xFF8D68F5), "LosGram Premium",
-                                    "Дополнительные возможности подписки", "LosGram Premium", expandedSetting) { expandedSetting = it }
+                                    if (premiumActive) "Подписка активна" else "Подключить Premium и управлять подпиской", "LosGram Premium", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
-                                    "Баланс и начисления звёзд", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
+                                    "Баланс: $starsBalance ⭐ · история и пополнение", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
                                     "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
