@@ -724,6 +724,9 @@ private fun ProfileSettingsScreen(
     var avatarUrl by remember { mutableStateOf("") }
     var businessName by remember { mutableStateOf("") }
     var businessDescription by remember { mutableStateOf("") }
+    var premiumActive by remember { mutableStateOf(false) }
+    var premiumUntil by remember { mutableStateOf("") }
+    var starsBalance by remember { mutableIntStateOf(0) }
     var notifications by remember { mutableStateOf(true) }
     var showPhone by remember { mutableStateOf(false) }
     var showLastSeen by remember { mutableStateOf(true) }
@@ -743,6 +746,9 @@ private fun ProfileSettingsScreen(
             avatarUrl = me.optString("avatar_url")
             businessName = me.optString("business_name")
             businessDescription = me.optString("business_description")
+            premiumActive = me.optBoolean("premium_active", false)
+            premiumUntil = me.optString("premium_until")
+            starsBalance = me.optInt("stars_balance", 0)
             val prefs = api("/me/settings", session.token)
             notifications = prefs.optBoolean("notifications_enabled", true)
             showPhone = prefs.optBoolean("show_phone", false)
@@ -825,6 +831,31 @@ private fun ProfileSettingsScreen(
                                     if (username.isNotBlank()) " #$username" else "",
                                     color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold,
                                     modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(8.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    if (premiumActive) {
+                                        Text("✦ PREMIUM", color = Color(0xFFFFD76A), fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                                                .background(Color(0xFF594A2A)).padding(horizontal = 10.dp, vertical = 5.dp))
+                                    } else {
+                                        Text("LosGram", color = Muted, fontSize = 11.sp)
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Panel)
+                                    .clickable { onOpenSettings() }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("⭐", fontSize = 20.sp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Звёзды", color = White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                    Text(starsBalance.toString(), color = Color(0xFFFFD76A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    Text("  ›", color = Muted, fontSize = 20.sp)
+                                }
+                                if (premiumActive && premiumUntil.isNotBlank()) {
+                                    Text("Premium действует до ${premiumUntil.take(10)}", color = Muted, fontSize = 11.sp,
+                                        modifier = Modifier.padding(top = 5.dp, start = 4.dp))
+                                }
                                 Spacer(Modifier.height(14.dp))
                                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(vertical = 14.dp),
                                     horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -899,6 +930,8 @@ private fun ProfileSettingsScreen(
                                 Spacer(Modifier.height(22.dp))
                                 Text("Не указана", color = White, fontSize = 20.sp)
                                 Text("Дата рождения", color = Muted, fontSize = 13.sp)
+                                Text("Настройки профиля", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(top = 18.dp).clickable { onOpenSettings() })
                                 Spacer(Modifier.height(22.dp))
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     listOf("Публикации", "Архив").forEach { tab ->
