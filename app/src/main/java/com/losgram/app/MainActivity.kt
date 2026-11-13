@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -60,7 +61,8 @@ private val White = Color(0xFFF2F2F2)
 data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
 data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false, val isSaved: Boolean = false)
 data class MessageReactionItem(val emoji: String, val count: Int, val mine: Boolean)
-data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean, val replyToId: Int? = null, val replyToBody: String? = null, val edited: Boolean = false, val deleted: Boolean = false, val reactions: List<MessageReactionItem> = emptyList())
+data class MessageAttachmentItem(val id: Int, val fileName: String, val mimeType: String, val size: Int)
+data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean, val replyToId: Int? = null, val replyToBody: String? = null, val edited: Boolean = false, val deleted: Boolean = false, val reactions: List<MessageReactionItem> = emptyList(), val attachment: MessageAttachmentItem? = null)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +130,24 @@ private suspend fun api(path: String, token: String? = null, method: String = "G
     }
 }
 
+private suspend fun downloadChatAttachment(conversationId: Int, attachmentId: Int, token: String): ByteArray = withContext(Dispatchers.IO) {
+    val connection = (URL("$API_BASE_URL/conversations/$conversationId/attachments/$attachmentId").openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 20000
+        readTimeout = 30000
+        setRequestProperty("Authorization", "Bearer $token")
+        setRequestProperty("Accept", "*/*")
+    }
+    try {
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            throw IllegalStateException(detail.ifBlank { "Не удалось скачать файл ($status)" })
+        }
+        connection.inputStream.use { it.readBytes() }
+    } finally { connection.disconnect() }
+}
+
 private suspend fun verifyLosGramLogin(virtualNumber: String, code: String): LoginSession {
     val response = api("/auth/telegram/verify", method = "POST",
         body = JSONObject().put("virtual_number", virtualNumber).put("code", code))
@@ -140,26 +160,6 @@ private suspend fun verifyLosGramLogin(virtualNumber: String, code: String): Log
 @Composable
 fun LosGramApp() {
     val context = LocalContext.current
-    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            busy = true
-            try {
-                val resolver = context.contentResolver
-                val mime = resolver.getType(uri) ?: "application/octet-stream"
-                val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "file"
-                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Не удалось прочитать файл")
-                require(bytes.isNotEmpty() && bytes.size <= 4 * 1024 * 1024) { "Максимальный размер файла — 4 МБ" }
-                val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                api("/conversations/${chat.id}/attachments", session.token, "POST",
-                    JSONObject().put("file_name", name).put("mime_type", mime).put("content_base64", encoded))
-                reload()
-                error = ""
-            } catch (e: Exception) { error = e.message ?: "Не удалось отправить файл" }
-            finally { busy = false }
-        }
-    }
     var session by remember { mutableStateOf<LoginSession?>(null) }
     var checkingSession by remember { mutableStateOf(true) }
 
@@ -594,6 +594,48 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     var showGiftMarket by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var pendingSaveBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingSaveMime by remember { mutableStateOf("application/octet-stream") }
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            busy = true
+            try {
+                val resolver = context.contentResolver
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "file"
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Не удалось прочитать файл")
+                require(bytes.isNotEmpty() && bytes.size <= 4 * 1024 * 1024) { "Максимальный размер файла — 4 МБ" }
+                val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                api("/conversations/${chat.id}/attachments", session.token, "POST",
+                    JSONObject().put("file_name", name).put("mime_type", mime).put("content_base64", encoded))
+                reload()
+                error = ""
+            } catch (e: Exception) { error = e.message ?: "Не удалось отправить файл" }
+            finally { busy = false }
+        }
+    }
+    val saveAttachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val bytes = pendingSaveBytes
+        if (uri != null && bytes != null) {
+            scope.launch {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: throw IllegalStateException("Не удалось сохранить файл")
+                    try {
+                        val viewIntent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, pendingSaveMime)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        context.startActivity(Intent.createChooser(viewIntent, "Открыть файл"))
+                        error = ""
+                    } catch (_: ActivityNotFoundException) {
+                        error = "Файл сохранён. На устройстве нет приложения для его открытия."
+                    }
+                } catch (e: Exception) { error = e.message ?: "Не удалось сохранить файл" }
+                finally { pendingSaveBytes = null }
+            }
+        } else pendingSaveBytes = null
+    }
 
     suspend fun reload() {
         val response = api("/conversations/${chat.id}/messages", session.token)
@@ -611,6 +653,9 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                     (0 until reactions.length()).map { index -> reactions.getJSONObject(index).let { reaction ->
                         MessageReactionItem(reaction.optString("emoji"), reaction.optInt("count"), reaction.optBoolean("mine"))
                     } }
+                }, item.optJSONObject("attachment")?.let { file ->
+                    MessageAttachmentItem(file.optInt("id"), file.optString("file_name"),
+                        file.optString("mime_type", "application/octet-stream"), file.optInt("size"))
                 })
         }
     }
@@ -716,8 +761,30 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                                     Text(it, color = Color(0xFFD7E3EC), fontSize = 12.sp, maxLines = 2)
                                 }
                             }
-                            Text(if (message.deleted) "Сообщение удалено" else message.body,
-                                color = if (message.deleted) Color(0xFFB3BEC8) else White, fontSize = 16.sp)
+                            if (message.attachment != null && !message.deleted) {
+                                val file = message.attachment
+                                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(10.dp)).background(Color(0x223A9BE8))
+                                    .clickable(enabled = !busy) {
+                                        scope.launch {
+                                            busy = true
+                                            try {
+                                                pendingSaveBytes = downloadChatAttachment(chat.id, file.id, session.token)
+                                                pendingSaveMime = file.mimeType.ifBlank { "application/octet-stream" }
+                                                saveAttachmentLauncher.launch(file.fileName.ifBlank { "attachment" })
+                                                error = ""
+                                            } catch (e: Exception) { error = e.message ?: "Не удалось скачать файл" }
+                                            finally { busy = false }
+                                        }
+                                    }.padding(10.dp)) {
+                                    Text("📎  ${file.fileName}", color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("${if (file.size >= 1024 * 1024) String.format("%.1f МБ", file.size / 1048576.0) else "${(file.size / 1024).coerceAtLeast(1)} КБ"} · Нажмите, чтобы скачать и открыть",
+                                        color = Color(0xFFB8D7F0), fontSize = 11.sp)
+                                }
+                            } else {
+                                Text(if (message.deleted) "Сообщение удалено" else message.body,
+                                    color = if (message.deleted) Color(0xFFB3BEC8) else White, fontSize = 16.sp)
+                            }
                             if (message.reactions.isNotEmpty() && !message.deleted) {
                                 Row(Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.End) {
                                     message.reactions.forEach { reaction ->
