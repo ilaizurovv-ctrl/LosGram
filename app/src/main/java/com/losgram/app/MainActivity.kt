@@ -622,17 +622,29 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = Navy) {
+    Surface(Modifier.fillMaxSize(), color = Color(0xFF0E1621)) {
         Column {
-            Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹", color = Blue, fontSize = 30.sp, modifier = Modifier.clickable { if (showSearch) { showSearch = false; searchQuery = "" } else onBack() }.padding(end = 14.dp))
+            Row(Modifier.fillMaxWidth().height(62.dp).background(Color(0xFF202B36)).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 32.sp,
+                    modifier = Modifier.clickable { if (showSearch) { showSearch = false; searchQuery = "" } else onBack() }
+                        .padding(end = 12.dp))
                 if (showSearch) {
-                    OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, modifier = Modifier.weight(1f),
-                        singleLine = true, placeholder = { Text("Поиск в чате") },
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Navy,
-                            focusedTextColor = White, unfocusedTextColor = White, focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+                    OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f), singleLine = true, placeholder = { Text("Поиск в чате") },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Color.Transparent,
+                            focusedTextColor = White, unfocusedTextColor = White, focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent))
                 } else {
-                    Text(chat.name, color = White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF527DA3)),
+                        contentAlignment = Alignment.Center) {
+                        Text(chat.name.take(1).uppercase(), color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(chat.name, color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text("личный чат LosGram", color = Color(0xFF9EABB7), fontSize = 12.sp)
+                    }
                 }
                 Text(if (showSearch) "✕" else "⌕", color = White, fontSize = 24.sp,
                     modifier = Modifier.clickable { showSearch = !showSearch; searchQuery = "" }.padding(start = 12.dp))
@@ -648,19 +660,32 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                         } else null
                     }
                     if (event?.optString("type") == "stars_topup") StarsTopUpNotice(event)
-                    else Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
-                        Column(Modifier.widthIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
-                            .background(if (message.mine) Color(0xFF245B87) else Panel)
+                    else Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
+                        Column(Modifier.widthIn(max = 304.dp).padding(vertical = 3.dp)
+                            .clip(RoundedCornerShape( if (message.mine) 18.dp else 18.dp))
+                            .background(if (message.mine) Color(0xFF2B5278) else Color(0xFF202B36))
                             .combinedClickable(onClick = {}, onLongClick = {
                                 if (!message.deleted && !message.body.startsWith("LG_EVENT:")) selectedMessage = message
-                            }).padding(12.dp)) {
+                            }).padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 7.dp)) {
                             message.replyToBody?.takeIf { it.isNotBlank() }?.let {
-                                Text("↪ $it", color = Color(0xFFB8D7F0), fontSize = 11.sp, maxLines = 2,
-                                    modifier = Modifier.padding(bottom = 5.dp))
+                                Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                                    .clip(RoundedCornerShape(5.dp)).background(Color(0x223FFFFFFF))
+                                    .padding(start = 8.dp, top = 5.dp, bottom = 5.dp)) {
+                                    Text("Ответ", color = Color(0xFF9CC7E8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(it, color = Color(0xFFD7E3EC), fontSize = 12.sp, maxLines = 2)
+                                }
                             }
-                            Text(message.body, color = if (message.deleted) Muted else White)
-                            if (message.edited && !message.deleted) Text("изменено", color = Color(0xFFB8D7F0),
-                                fontSize = 10.sp, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
+                            Text(if (message.deleted) "Сообщение удалено" else message.body,
+                                color = if (message.deleted) Color(0xFFB3BEC8) else White, fontSize = 16.sp)
+                            Row(Modifier.align(Alignment.End).padding(top = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                if (message.edited && !message.deleted) {
+                                    Text("изменено", color = Color(0xFFB8D7F0), fontSize = 10.sp,
+                                        modifier = Modifier.padding(end = 5.dp))
+                                }
+                                if (message.mine) Text("✓✓", color = Color(0xFF9CC7E8), fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -676,14 +701,23 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                     Text("✕", color = White, modifier = Modifier.clickable { replyTo = null; editing = null; draft = "" }.padding(8.dp))
                 }
             }
-            Row(Modifier.fillMaxWidth().background(Panel).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().background(Color(0xFF17212B)).imePadding()
+                .navigationBarsPadding().padding(horizontal = 9.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (editing != null) "Изменить сообщение" else "Сообщение") }, enabled = !busy,
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Navy,
-                        focusedTextColor = White, unfocusedTextColor = White, focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+                    placeholder = { Text(if (editing != null) "Изменить сообщение" else "Сообщение", color = Color(0xFF8997A5)) },
+                    enabled = !busy, shape = RoundedCornerShape(25.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF344454),
+                        unfocusedBorderColor = Color(0xFF344454), focusedTextColor = White, unfocusedTextColor = White,
+                        focusedContainerColor = Color(0xFF202B36), unfocusedContainerColor = Color(0xFF202B36),
+                        cursorColor = Blue))
                 Spacer(Modifier.width(8.dp))
-                Button(enabled = draft.isNotBlank() && !busy, onClick = { sendDraft() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text(if (editing != null) "✓" else "➤") }
+                Box(Modifier.size(48.dp).clip(CircleShape)
+                    .background(if (draft.isNotBlank() && !busy) Blue else Color(0xFF344454))
+                    .clickable(enabled = draft.isNotBlank() && !busy) { sendDraft() },
+                    contentAlignment = Alignment.Center) {
+                    Text(if (editing != null) "✓" else "➤", color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
