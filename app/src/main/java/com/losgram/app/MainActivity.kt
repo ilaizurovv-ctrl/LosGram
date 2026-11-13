@@ -1357,14 +1357,26 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
     var search by remember { mutableStateOf("") }
     var tab by remember { mutableIntStateOf(0) }
     var sort by remember { mutableStateOf("new") }
+    var history by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var profile by remember { mutableStateOf<JSONObject?>(null) }
+    var reviewTarget by remember { mutableStateOf<JSONObject?>(null) }
+    var reviewRating by remember { mutableIntStateOf(5) }
+    var reviewComment by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    suspend fun loadHistory() {
+        val arr = api("/market/history", session.token).optJSONArray("items") ?: JSONArray()
+        history = (0 until arr.length()).map { arr.getJSONObject(it) }
+    }
+    suspend fun loadSellerProfile(userId: Int) {
+        profile = api("/market/users/$userId", session.token)
+    }
     suspend fun refresh() {
         val arr = api("/market/nfts", session.token).optJSONArray("items") ?: JSONArray()
         items = (0 until arr.length()).map { arr.getJSONObject(it) }
     }
     val filtered = items.filter { nft ->
         val query = search.trim()
-        (tab == 0 || nft.optBoolean("is_mine")) &&
+        (tab != 1 || nft.optBoolean("is_mine")) &&
             (query.isBlank() || listOf("name", "model", "background", "pattern", "seller_name")
                 .any { nft.optString(it).contains(query, ignoreCase = true) } ||
                 nft.optInt("number").toString().contains(query))
@@ -1396,16 +1408,16 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                 singleLine = true, placeholder = { Text("Поиск подарка, модели или продавца…") },
                 leadingIcon = { Text("⌕", color = Muted, fontSize = 22.sp) },
                 trailingIcon = { if (search.isNotBlank()) Text("✕", modifier = Modifier.clickable { search = "" }.padding(8.dp), color = Muted) })
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Все предложения", "Мои объявления").forEachIndexed { index, label ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf("Все", "Мои", "История").forEachIndexed { index, label ->
                     Box(Modifier.weight(1f).clip(RoundedCornerShape(18.dp))
                         .background(if (tab == index) Color(0xFF355D80) else Color(0xFF202B36))
-                        .clickable { tab = index }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) {
+                        .clickable { tab = index; if (index == 2) scope.launch { loading = true; try { loadHistory(); message = "" } catch (e: Exception) { message = e.message ?: "Не удалось загрузить историю" }; loading = false } }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) {
                         Text(label, color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (tab != 2) Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("new" to "Сначала новые", "cheap" to "Дешевле", "expensive" to "Дороже").forEach { (key, label) ->
                     Box(Modifier.clip(RoundedCornerShape(14.dp)).background(if (sort == key) Color(0xFF263E52) else Color(0xFF202B36))
                         .clickable { sort = key }.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -1415,6 +1427,22 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
             }
             if (loading) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Blue)
+            } else if (tab == 2 && history.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text("История сделок пока пуста. Здесь появятся ваши покупки и продажи.", color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            } else if (tab == 2) LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(14.dp)) {
+                items(history, key = { "history-" + it.optInt("listing_id") }) { deal ->
+                    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF202B36)).padding(14.dp)) {
+                        Text((if (deal.optString("role") == "buy") "Покупка · " else "Продажа · ") + deal.optString("name") + " №" + deal.optInt("number"),
+                            color = White, fontWeight = FontWeight.Bold)
+                        Text("⭐ " + deal.optInt("price") + " · " + (if (deal.optString("status") == "sold") "Завершена" else "Активна"),
+                            color = Color(0xFFFFD76A), modifier = Modifier.padding(top = 4.dp))
+                        Text((if (deal.optString("role") == "buy") "Продавец: " else "Покупатель: ") + deal.optString("counterparty_name"),
+                            color = Blue, modifier = Modifier.clickable { deal.optInt("counterparty_id").takeIf { it > 0 }?.let { id -> scope.launch { try { loadSellerProfile(id) } catch (e: Exception) { message = e.message ?: "Не удалось открыть профиль" } } } }.padding(top = 5.dp))
+                        if (deal.optBoolean("can_review")) Text("Оставить отзыв", color = Blue, modifier = Modifier.clickable {
+                            reviewTarget = deal; reviewRating = 5; reviewComment = ""
+                        }.padding(top = 8.dp))
+                    }
+                }
             } else if (filtered.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 Text(if (tab == 1) "У вас пока нет активных объявлений. Выставить NFT на продажу можно в профиле, в разделе «Коллекция подарков»."
                     else if (search.isNotBlank()) "Ничего не найдено. Попробуйте изменить запрос."
@@ -1431,7 +1459,8 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                             Text(nft.optString("name"), color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             Text("#" + nft.optInt("number") + " · " + nft.optString("model"), color = Muted, fontSize = 12.sp)
                             Text("Фон: " + nft.optString("background") + " · Узор: " + nft.optString("pattern"), color = Muted, fontSize = 11.sp)
-                            Text("Продавец: " + nft.optString("seller_name"), color = Muted, fontSize = 12.sp)
+                            Text("Продавец: " + nft.optString("seller_name"), color = Blue, fontSize = 12.sp,
+                                modifier = Modifier.clickable { scope.launch { try { loadSellerProfile(nft.optInt("seller_id")) } catch (e: Exception) { message = e.message ?: "Не удалось открыть профиль" } } })
                             Text("⭐ " + nft.optInt("price"), color = Color(0xFFFFD76A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             if (nft.optBoolean("is_mine")) {
                                 Text("Ваше объявление", color = Blue, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
@@ -1466,6 +1495,55 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                 }
             }) { Text(if (busyId != 0) "Покупаем..." else "Купить за ⭐ " + nft.optInt("price")) } },
             dismissButton = { TextButton(onClick = { selected = null }) { Text("Отмена") } })
+    }
+
+    profile?.let { seller ->
+        AlertDialog(onDismissRequest = { profile = null },
+            title = { Text(seller.optString("display_name") + " · продавец") },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(if (seller.optString("username").isNotBlank() && seller.optString("username") != "null") "@" + seller.optString("username") else "Профиль LosGram", color = Blue)
+                if (seller.optString("bio").isNotBlank() && seller.optString("bio") != "null") Text(seller.optString("bio"), color = Muted, modifier = Modifier.padding(top = 6.dp))
+                Text("Продаж: " + seller.optInt("sales_count") + " · Получено ⭐ " + seller.optInt("stars_earned"), color = White, modifier = Modifier.padding(top = 10.dp))
+                Text("Рейтинг: " + seller.optDouble("rating") + "/5 · Отзывов: " + seller.optInt("reviews_count"), color = Color(0xFFFFD76A), modifier = Modifier.padding(top = 5.dp))
+                val reviews = seller.optJSONArray("reviews") ?: JSONArray()
+                for (i in 0 until reviews.length()) {
+                    val review = reviews.optJSONObject(i) ?: continue
+                    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF202B36)).padding(10.dp)) {
+                        Text(review.optString("buyer_name") + " · " + review.optInt("rating") + "/5", color = Color(0xFFFFD76A))
+                        if (review.optString("comment").isNotBlank()) Text(review.optString("comment"), color = White)
+                    }
+                }
+                if (reviews.length() == 0) Text("Отзывов пока нет.", color = Muted, modifier = Modifier.padding(top = 10.dp))
+            } },
+            confirmButton = { TextButton(onClick = { profile = null }) { Text("Закрыть") } })
+    }
+    reviewTarget?.let { deal ->
+        AlertDialog(onDismissRequest = { reviewTarget = null },
+            title = { Text("Оценить продавца") },
+            text = { Column {
+                Text("Оценка от 1 до 5", color = Muted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                    (1..5).forEach { value ->
+                        Text(if (value <= reviewRating) "★" else "☆", color = Color(0xFFFFD76A), fontSize = 28.sp,
+                            modifier = Modifier.clickable { reviewRating = value })
+                    }
+                }
+                OutlinedTextField(value = reviewComment, onValueChange = { reviewComment = it.take(500) },
+                    label = { Text("Комментарий (необязательно)") }, minLines = 2)
+            } },
+            confirmButton = { TextButton(onClick = {
+                scope.launch {
+                    try {
+                        api("/market/reviews", session.token, "POST", JSONObject()
+                            .put("listing_id", deal.optInt("listing_id"))
+                            .put("rating", reviewRating).put("comment", reviewComment))
+                        message = "Отзыв опубликован."
+                        reviewTarget = null
+                        loadHistory()
+                    } catch (e: Exception) { message = e.message ?: "Не удалось отправить отзыв" }
+                }
+            }) { Text("Опубликовать") } },
+            dismissButton = { TextButton(onClick = { reviewTarget = null }) { Text("Отмена") } })
     }
     cancelSelected?.let { nft ->
         AlertDialog(onDismissRequest = { if (busyId == 0) cancelSelected = null },
