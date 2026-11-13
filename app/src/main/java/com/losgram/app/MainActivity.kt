@@ -977,8 +977,6 @@ private fun ProfileSettingsScreen(
                                     "Дополнительные возможности подписки", "LosGram Premium", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
                                     "Баланс и начисления звёзд", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
-                                SettingsEntry("🤖", Color(0xFF229ED9), "BotFather", "Создание ботов и Bot API", "BotFather", expandedSetting) { expandedSetting = it }
-                                if (expandedSetting == "BotFather") item { BotFatherPanel(session) }
                                 SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
                                     "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
