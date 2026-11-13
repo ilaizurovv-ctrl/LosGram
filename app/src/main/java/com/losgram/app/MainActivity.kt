@@ -305,6 +305,16 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         }
     }
 
+    if (selectedTab == 2 || selectedTab == 3) {
+        ProfileSettingsScreen(
+            session = session,
+            showProfile = selectedTab == 3,
+            onBack = { selectedTab = 0 },
+            onLogout = onLogout
+        )
+        return
+    }
+
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
@@ -446,7 +456,6 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                             .background(if (selectedTab == index) Color(0xFF30352D) else Color.Transparent)
                             .clickable {
                                 selectedTab = index
-                                if (index == 3) onLogout()
                                 if (index == 1) { searchOpen = true; search = ""; searchResults = emptyList() }
                             },
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -541,6 +550,98 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                     }
                 }, colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("➤") }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSettingsScreen(
+    session: LoginSession,
+    showProfile: Boolean,
+    onBack: () -> Unit,
+    onLogout: () -> Unit
+) {
+    var expanded by remember { mutableStateOf("") }
+    val title = if (showProfile) "Профиль" else "Настройки"
+    Surface(Modifier.fillMaxSize(), color = Navy) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("‹", color = Blue, fontSize = 32.sp,
+                    modifier = Modifier.clickable { onBack() }.padding(end = 18.dp))
+                Text(title, color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            }
+            if (showProfile) {
+                Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(112.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
+                        Text(session.displayName.take(1).uppercase(), color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text(session.displayName, color = White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Text(session.virtualNumber, color = Muted, fontSize = 16.sp)
+                    Spacer(Modifier.height(22.dp))
+                    SettingsRow("Изменить имя", "Настроить отображаемое имя", expanded, { expanded = if (expanded == it) "" else it })
+                    SettingsRow("Аватар профиля", "Фотография профиля — скоро", expanded, { expanded = if (expanded == it) "" else it })
+                    SettingsRow("О себе", "Добавить описание — скоро", expanded, { expanded = if (expanded == it) "" else it })
+                    SettingsRow("Мой QR-код", "Быстро поделиться профилем — скоро", expanded, { expanded = if (expanded == it) "" else it })
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 24.dp)) {
+                    item {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
+                            Text("⭐ Los Premium", color = Color(0xFFFFD76A), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Больше возможностей, эксклюзивное оформление и расширенные функции.", color = Muted, fontSize = 14.sp)
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = { expanded = "premium" }, colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
+                                Text("Подробнее")
+                            }
+                            if (expanded == "premium") Text("Подписка и оплата появятся после подключения безопасной платёжной системы.", color = White, fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
+                            Text("⭐ Звёзды LosGram", color = Color(0xFFFFD76A), fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                            Text("Подарки авторам и поддержка каналов — скоро.", color = Muted, fontSize = 14.sp)
+                            TextButton(onClick = { expanded = "stars" }) { Text("Узнать больше", color = Blue) }
+                            if (expanded == "stars") Text("Баланс звёзд и покупки будут доступны после интеграции платежей.", color = White, fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        SettingsRow("Los Premium для бизнеса", "Инструменты для компаний и магазинов", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Уведомления", "Звуки и настройки уведомлений", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Конфиденциальность", "Кто может видеть ваши данные", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Оформление", "Тема и внешний вид приложения", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Язык", "Язык приложения", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Устройства", "Активные сеансы — скоро", expanded, { expanded = if (expanded == it) "" else it })
+                        SettingsRow("Помощь", "Поддержка LosGram", expanded, { expanded = if (expanded == it) "" else it })
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                            Text("Выйти из аккаунта", color = Color(0xFFFF7777))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    title: String,
+    subtitle: String,
+    expanded: String,
+    onClick: (String) -> Unit
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(16.dp))
+            .background(Panel).clickable { onClick(title) }.padding(16.dp)
+    ) {
+        Text(title, color = White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+        Text(subtitle, color = Muted, fontSize = 13.sp)
+        if (expanded == title) {
+            Spacer(Modifier.height(7.dp))
+            Text("Этот раздел добавлен в интерфейс. Подключение функций будет следующим этапом.", color = Blue, fontSize = 13.sp)
         }
     }
 }
