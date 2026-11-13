@@ -569,6 +569,8 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     var replyTo by remember { mutableStateOf<MessageItem?>(null) }
     var editing by remember { mutableStateOf<MessageItem?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var otherTyping by remember { mutableStateOf(false) }
+    var typingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var showGiftMarket by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -601,10 +603,13 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     LaunchedEffect(chat.id) {
         try {
             while (true) {
-                try { reload(); error = "" }
-                catch (e: Exception) { error = e.message ?: "Не удалось загрузить сообщения" }
+                try {
+                    reload()
+                    otherTyping = api("/conversations/${chat.id}/typing", session.token).optBoolean("typing")
+                    error = ""
+                } catch (e: Exception) { error = e.message ?: "Не удалось загрузить сообщения" }
                 finally { loading = false }
-                delay(3000)
+                delay(1800)
             }
         } catch (_: kotlinx.coroutines.CancellationException) { }
     }
@@ -655,7 +660,8 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                     Spacer(Modifier.width(11.dp))
                     Column(Modifier.weight(1f)) {
                         Text(chat.name, color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Text("личный чат LosGram", color = Color(0xFF9EABB7), fontSize = 12.sp)
+                        Text(if (otherTyping) "печатает…" else "личный чат LosGram",
+                            color = if (otherTyping) Color(0xFF7FC7FF) else Color(0xFF9EABB7), fontSize = 12.sp)
                     }
                 }
                 if (!showSearch && chat.id > 0) Text("🎁", fontSize = 22.sp,
@@ -738,7 +744,17 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
             Row(Modifier.fillMaxWidth().background(Color(0xFF17212B)).imePadding()
                 .navigationBarsPadding().padding(horizontal = 9.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
+                OutlinedTextField(value = draft, onValueChange = { value ->
+                    draft = value
+                    typingJob?.cancel()
+                    if (value.isNotBlank() && editing == null) {
+                        typingJob = scope.launch {
+                            delay(350)
+                            try { api("/conversations/${chat.id}/typing", session.token, "POST", JSONObject()) }
+                            catch (_: Exception) { }
+                        }
+                    }
+                }, modifier = Modifier.weight(1f),
                     placeholder = { Text(if (editing != null) "Изменить сообщение" else "Сообщение", color = Color(0xFF8997A5)) },
                     enabled = !busy, shape = RoundedCornerShape(25.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF344454),
