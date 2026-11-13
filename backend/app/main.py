@@ -296,6 +296,21 @@ def participant(db: Session, conversation_id: int, user_id: int) -> bool:
     )) is not None
 
 
+def ensure_saved_chat(db: Session, user: User) -> Conversation:
+    conversation = db.scalar(select(Conversation).where(
+        Conversation.kind == "saved",
+        Conversation.title == f"saved:{user.id}"
+    ).order_by(Conversation.id))
+    if not conversation:
+        conversation = Conversation(kind="saved", title=f"saved:{user.id}")
+        db.add(conversation)
+        db.flush()
+    if not participant(db, conversation.id, user.id):
+        db.add(Participant(conversation_id=conversation.id, user_id=user.id))
+        db.commit()
+    return conversation
+
+
 def ensure_global_chat(db: Session, user: User) -> Conversation:
     conversation = db.scalar(select(Conversation).where(Conversation.kind == "global").order_by(Conversation.id))
     if not conversation:
@@ -621,6 +636,7 @@ def create_direct(payload: DirectConversationRequest, db: Session = Depends(get_
 @app.get("/conversations")
 def list_conversations(db: Session = Depends(get_db), user: User = Depends(current_user)):
     ensure_global_chat(db, user)
+    ensure_saved_chat(db, user)
     memberships = db.scalars(select(Participant).where(Participant.user_id == user.id)).all()
     result = []
     for membership in memberships:
@@ -629,7 +645,7 @@ def list_conversations(db: Session = Depends(get_db), user: User = Depends(curre
         others = [db.get(User, m.user_id) for m in members if m.user_id != user.id]
         last = db.scalar(select(Message).where(Message.conversation_id == conv.id)
                          .order_by(Message.id.desc()).limit(1))
-        result.append({"id": conv.id, "kind": conv.kind, "title": conv.title,
+        result.append({"id": conv.id, "kind": conv.kind, "title": ("Избранное" if conv.kind == "saved" else conv.title),
                        "members": [{"id": x.id, "display_name": x.display_name, "username": x.username} for x in others],
                        "last_message": ({"id": last.id, "sender_id": last.sender_id, "body": last.body,
                                          "created_at": last.created_at.isoformat()} if last else None)})
