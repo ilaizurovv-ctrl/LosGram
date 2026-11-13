@@ -560,6 +560,8 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     }
     var messages by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var selectedMessage by remember { mutableStateOf<MessageItem?>(null) }
@@ -622,15 +624,24 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
 
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column {
-            Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹", color = Blue, fontSize = 30.sp, modifier = Modifier.clickable { onBack() }.padding(end = 14.dp))
-                Text(chat.name, color = White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 30.sp, modifier = Modifier.clickable { if (showSearch) { showSearch = false; searchQuery = "" } else onBack() }.padding(end = 14.dp))
+                if (showSearch) {
+                    OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, modifier = Modifier.weight(1f),
+                        singleLine = true, placeholder = { Text("Поиск в чате") },
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Navy,
+                            focusedTextColor = White, unfocusedTextColor = White, focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+                } else {
+                    Text(chat.name, color = White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                }
+                Text(if (showSearch) "✕" else "⌕", color = White, fontSize = 24.sp,
+                    modifier = Modifier.clickable { showSearch = !showSearch; searchQuery = "" }.padding(start = 12.dp))
             }
             if (error.isNotBlank()) Text(error, color = Color(0xFFFF7777), modifier = Modifier.padding(12.dp))
             if (loading) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Blue)
             } else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(12.dp)) {
-                items(messages, key = { it.id }) { message ->
+                items(messages.filter { searchQuery.isBlank() || it.body.contains(searchQuery, ignoreCase = true) }, key = { it.id }) { message ->
                     val event = remember(message.body) {
                         if (message.body.startsWith("LG_EVENT:")) {
                             try { JSONObject(message.body.removePrefix("LG_EVENT:")) } catch (_: Exception) { null }
