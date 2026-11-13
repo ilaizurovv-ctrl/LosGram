@@ -768,8 +768,12 @@ private fun ProfileSettingsScreen(
             premiumActive = me.optBoolean("premium_active", false)
             premiumUntil = me.optString("premium_until")
             starsBalance = me.optInt("stars_balance", 0)
-            val giftItems = api("/me/gifts", session.token).optJSONArray("items") ?: JSONArray()
-            collectibleGifts = (0 until giftItems.length()).map { giftItems.getJSONObject(it) }
+            try {
+                val giftItems = api("/me/gifts", session.token).optJSONArray("items") ?: JSONArray()
+                collectibleGifts = (0 until giftItems.length()).map { giftItems.getJSONObject(it) }
+            } catch (_: Exception) {
+                collectibleGifts = emptyList()
+            }
             val prefs = api("/me/settings", session.token)
             notifications = prefs.optBoolean("notifications_enabled", true)
             showPhone = prefs.optBoolean("show_phone", false)
