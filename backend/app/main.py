@@ -749,6 +749,23 @@ async def send_message(conversation_id: int, payload: MessageRequest,
     return data
 
 
+@app.post("/conversations/{conversation_id}/messages/{message_id}/forward-to-saved")
+def forward_message_to_saved(conversation_id: int, message_id: int,
+                             db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    source = db.get(Message, message_id)
+    if not source or source.conversation_id != conversation_id or source.deleted_at:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    saved = ensure_saved_chat(db, user)
+    forwarded = Message(conversation_id=saved.id, sender_id=user.id,
+                        body=f"Переслано: {source.body}")
+    db.add(forwarded)
+    db.commit()
+    db.refresh(forwarded)
+    return {"ok": True, "conversation_id": saved.id, "message_id": forwarded.id}
+
+
 @app.patch("/conversations/{conversation_id}/messages/{message_id}")
 def edit_message(conversation_id: int, message_id: int, payload: MessageEditRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not participant(db, conversation_id, user.id):
