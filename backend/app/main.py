@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -10,11 +12,11 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select, or_, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, create_engine, select, or_, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 APP_ENV = os.getenv("APP_ENV", "development")
@@ -107,6 +109,18 @@ class Message(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+
+
+class MessageAttachment(Base):
+    __tablename__ = "message_attachments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), index=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
+    file_name: Mapped[str] = mapped_column(String(180))
+    mime_type: Mapped[str] = mapped_column(String(120))
+    size: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class MessageReaction(Base):
@@ -1206,6 +1220,61 @@ async def send_message(conversation_id: int, payload: MessageRequest,
     for member_id in members:
         await hub.send_to_user(member_id, data)
     return data
+
+
+@app.post("/conversations/{conversation_id}/attachments")
+async def upload_chat_attachment(conversation_id: int, payload: dict,
+                                 db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    raw_name = str(payload.get("file_name", "file")).replace("\\", "/").split("/")[-1].strip()
+    file_name = (raw_name or "file")[:180]
+    mime_type = str(payload.get("mime_type", "application/octet-stream")).lower()[:120]
+    if mime_type in {"text/html", "image/svg+xml", "application/x-msdownload"}:
+        raise HTTPException(status_code=415, detail="Этот тип файла не поддерживается")
+    encoded = payload.get("content_base64")
+    if not isinstance(encoded, str) or len(encoded) > 5_600_000:
+        raise HTTPException(status_code=413, detail="Файл слишком большой (максимум 4 МБ)")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Некорректный файл")
+    if not content or len(content) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Файл пустой или превышает 4 МБ")
+    message = Message(conversation_id=conversation_id, sender_id=user.id, body=f"📎 {file_name}")
+    db.add(message)
+    db.flush()
+    attachment = MessageAttachment(message_id=message.id, conversation_id=conversation_id,
+                                   file_name=file_name, mime_type=mime_type,
+                                   size=len(content), content=content)
+    db.add(attachment)
+    db.commit()
+    db.refresh(message)
+    data = {"type": "message", "id": message.id, "conversation_id": conversation_id,
+            "sender_id": user.id, "body": message.body, "created_at": message.created_at.isoformat(),
+            "attachment": {"id": attachment.id, "file_name": file_name, "mime_type": mime_type,
+                           "size": len(content)}}
+    members = db.scalars(select(Participant.user_id).where(Participant.conversation_id == conversation_id)).all()
+    for member_id in members:
+        await hub.send_to_user(member_id, data)
+    return data
+
+
+@app.get("/conversations/{conversation_id}/attachments/{attachment_id}")
+def download_chat_attachment(conversation_id: int, attachment_id: int,
+                             db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    attachment = db.scalar(select(MessageAttachment).where(
+        MessageAttachment.id == attachment_id,
+        MessageAttachment.conversation_id == conversation_id
+    ))
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    safe_name = attachment.file_name.replace('"', "").replace("\\r", "").replace("\\n", "")
+    return Response(content=attachment.content, media_type=attachment.mime_type,
+                    headers={"Content-Disposition": f'attachment; filename="{safe_name}"',
+                             "Content-Length": str(attachment.size)})
 
 
 @app.post("/conversations/{conversation_id}/messages/{message_id}/reactions")
