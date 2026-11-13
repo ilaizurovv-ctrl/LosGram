@@ -1068,61 +1068,53 @@ private fun ProfileSettingsScreen(
 
 
 @Composable
-private fun LosGramMarketScreen(onBack: () -> Unit) {
-    val gifts = listOf("Мишка" to ("🧸" to 15), "Сердце с бантом" to ("💝" to 15),
-        "Подарок" to ("🎁" to 25), "Букет" to ("💐" to 50))
+private fun LosGramMarketScreen(onBack: () -> Unit, balance: Int = 0) {
+    val gifts = listOf("Мишка" to ("🧸" to 15), "Сердце с бантом" to ("💝" to 15), "Подарок" to ("🎁" to 25), "Букет" to ("💐" to 50))
     var selected by remember { mutableStateOf<Pair<String, Pair<String, Int>>?>(null) }
     Surface(Modifier.fillMaxSize(), color = Color.Black) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = White, fontSize = 34.sp, modifier = Modifier.clickable { onBack() }.padding(end = 16.dp))
-                Text("Отправить подарок", color = White, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                Text("Настройки", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Баланс", color = White, fontSize = 14.sp)
+                    Text("⭐ $balance", color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(18.dp))
-                Text("🎁", fontSize = 72.sp)
+                Spacer(Modifier.height(16.dp))
+                Box(Modifier.size(112.dp).clip(CircleShape).background(Color(0xFF282828)), contentAlignment = Alignment.Center) { Text("🎁", fontSize = 54.sp) }
+                Spacer(Modifier.height(42.dp))
                 Text("Купить подарок", color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(10.dp))
-                Text("Подарок можно добавить в профиль или отложить.", color = White, fontSize = 16.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                Spacer(Modifier.height(8.dp))
-                Text("Редкий подарок можно превратить в коллекционный и затем подарить другому пользователю.",
-                    color = White, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                Spacer(Modifier.height(24.dp))
-                Box(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF242424)).padding(horizontal = 24.dp, vertical = 10.dp)) {
-                    Text("Все", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.height(22.dp))
-                gifts.chunked(2).forEach { pair ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { gift ->
-                            Column(Modifier.weight(1f).clickable { selected = gift }.padding(vertical = 16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.fillMaxWidth().height(142.dp), contentAlignment = Alignment.Center) {
-                                    Text(gift.second.first, fontSize = 82.sp)
-                                }
-                                Row(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF241B0B))
-                                    .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text("⭐", fontSize = 20.sp)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(gift.second.second.toString(), color = Color(0xFFFFB52E), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(20.dp))
+                Text("Подарок можно добавить в профиль или отложить.", color = White, fontSize = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 22.sp)
+                Spacer(Modifier.height(18.dp))
+                Text("Выберите подарок для друга.", color = White, fontSize = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Spacer(Modifier.height(28.dp))
+                Box(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF242424)).padding(horizontal = 24.dp, vertical = 10.dp)) { Text("Все", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                Spacer(Modifier.height(26.dp))
+                gifts.chunked(3).forEach { rowGifts ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowGifts.forEach { gift ->
+                            Column(Modifier.weight(1f).clickable { selected = gift }.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.fillMaxWidth().height(112.dp), contentAlignment = Alignment.Center) { Text(gift.second.first, fontSize = 76.sp) }
+                                Spacer(Modifier.height(12.dp))
+                                Row(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF241B0C)).padding(horizontal = 15.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("⭐", fontSize = 20.sp); Spacer(Modifier.width(5.dp)); Text(gift.second.second.toString(), color = Color(0xFFFFB52E), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
+                        repeat(3 - rowGifts.size) { Spacer(Modifier.weight(1f)) }
                     }
+                    Spacer(Modifier.height(32.dp))
                 }
             }
         }
     }
-    selected?.let { gift ->
-        AlertDialog(onDismissRequest = { selected = null }, title = { Text(gift.first) },
-            text = { Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(gift.second.first, fontSize = 64.sp)
-                Text("Цена: ⭐ " + gift.second.second)
-                Text("Покупка и отправка пока недоступны: серверное списание звёзд не подключено.")
-            } },
-            confirmButton = { TextButton(onClick = { selected = null }) { Text("Понятно") } })
-    }
+    selected?.let { gift -> AlertDialog(onDismissRequest = { selected = null }, title = { Text(gift.first) },
+        text = { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(gift.second.first, fontSize = 64.sp); Text("Цена: ⭐ " + gift.second.second); Text("Покупка и отправка пока недоступны: серверное списание звёзд не подключено.") } },
+        confirmButton = { TextButton(onClick = { selected = null }) { Text("Понятно") } }) }
 }
 
 @Composable
