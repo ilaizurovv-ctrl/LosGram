@@ -310,6 +310,18 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         }
     }
 
+    if (selectedTab == 1) {
+        ContactsScreen(
+            session = session,
+            onBack = { selectedTab = 0 },
+            onOpenChat = { chat ->
+                selectedChat = chat
+                selectedTab = 0
+            }
+        )
+        return
+    }
+
     if (selectedTab == 2 || selectedTab == 3) {
         ProfileSettingsScreen(
             session = session,
@@ -1243,6 +1255,125 @@ private fun SettingsRow(
         if (expanded == title) {
             Spacer(Modifier.height(7.dp))
             Text("Этот раздел добавлен в интерфейс. Подключение функций будет следующим этапом.", color = Blue, fontSize = 13.sp)
+        }
+    }
+}
+
+
+@Composable
+private fun ContactsScreen(
+    session: LoginSession,
+    onBack: () -> Unit,
+    onOpenChat: (ChatItem) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    Surface(Modifier.fillMaxSize(), color = Navy) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("‹", color = Blue, fontSize = 30.sp,
+                    modifier = Modifier.clickable { onBack() }.padding(end = 14.dp))
+                Text("Контакты", color = White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
+            Text("Найти людей в LosGram", color = Muted, fontSize = 14.sp)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it; error = "" },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("Имя или @username") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Blue, unfocusedBorderColor = Panel,
+                    focusedTextColor = White, unfocusedTextColor = White,
+                    cursorColor = Blue, focusedContainerColor = Panel,
+                    unfocusedContainerColor = Panel
+                )
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    if (query.trim().length < 2) {
+                        error = "Введите минимум 2 символа"
+                    } else {
+                        scope.launch {
+                            loading = true
+                            error = ""
+                            try {
+                                val response = api("/users/search?q=" + Uri.encode(query.trim()), session.token)
+                                val arr = response.optJSONArray("items") ?: JSONArray()
+                                results = (0 until arr.length()).map { index ->
+                                    val user = arr.getJSONObject(index)
+                                    user.optInt("id") to user.optString("display_name", "Пользователь")
+                                }
+                            } catch (e: Exception) {
+                                error = e.message ?: "Не удалось выполнить поиск"
+                            } finally {
+                                loading = false
+                            }
+                        }
+                    }
+                },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Blue)
+            ) { Text(if (loading) "Ищем..." else "Найти людей") }
+
+            if (error.isNotBlank()) {
+                Text(error, color = Color(0xFFFF7777), modifier = Modifier.padding(top = 10.dp))
+            }
+            if (!loading && results.isEmpty() && error.isBlank()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Введите имя или username, чтобы найти пользователей LosGram",
+                        color = Muted, fontSize = 14.sp)
+                }
+            } else {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    items(results, key = { it.first }) { (userId, name) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                scope.launch {
+                                    loading = true
+                                    error = ""
+                                    try {
+                                        val response = api(
+                                            "/conversations/direct", session.token, "POST",
+                                            JSONObject().put("user_id", userId)
+                                        )
+                                        onOpenChat(ChatItem(response.optInt("id"), name, "Нет сообщений"))
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "Не удалось открыть переписку"
+                                    } finally {
+                                        loading = false
+                                    }
+                                }
+                            }.padding(vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(Modifier.size(50.dp).clip(CircleShape).background(Blue),
+                                contentAlignment = Alignment.Center) {
+                                Text(name.take(1).uppercase(), color = Color.White,
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(name, color = White, fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium)
+                                Text("Открыть личный чат", color = Muted, fontSize = 13.sp)
+                            }
+                            Text("›", color = Muted, fontSize = 24.sp)
+                        }
+                        HorizontalDivider(color = Panel, thickness = 0.6.dp)
+                    }
+                }
+            }
         }
     }
 }
