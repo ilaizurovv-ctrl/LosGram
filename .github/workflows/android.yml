@@ -1,8 +1,9 @@
-name: Android debug build
+name: Android build
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -23,10 +24,40 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Build debug APK
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
         run: gradle assembleDebug
-      - name: Upload APK
+      - name: Upload debug APK
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: LosGram-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Decode release signing key
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LOSGRAM_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || (echo "Missing LOSGRAM_KEYSTORE_BASE64 repository secret" && exit 1)
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/losgram-release.jks"
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          LOS_GGRAM_KEYSTORE_FILE: ${{ runner.temp }}/losgram-release.jks
+          LOS_GGRAM_KEYSTORE_PASSWORD: ${{ secrets.LOSGRAM_KEYSTORE_PASSWORD }}
+          LOS_GGRAM_KEY_ALIAS: ${{ secrets.LOSGRAM_KEY_ALIAS }}
+          LOS_GGRAM_KEY_PASSWORD: ${{ secrets.LOSGRAM_KEY_PASSWORD }}
+        run: gradle assembleRelease
+      - name: Upload release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: LosGram-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
+          generate_release_notes: true
