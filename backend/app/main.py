@@ -1213,13 +1213,6 @@ def nft_market(db: Session = Depends(get_db), user: User = Depends(current_user)
         .order_by(NFTListing.created_at.desc())
         .limit(100)
     ).all()
-    return {"items": [{
-        "listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
-        "model": gift.model, "background": gift.background, "pattern": gift.pattern,
-        "number": gift.number, "price": listing.price, "seller_id": seller.id,
-        "seller_name": seller.display_name, "seller_username": seller.username,
-        "created_at": listing.created_at.isoformat(),
-        "is_mine": listing.seller_id == user.id,
     items = [{
         "listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
         "model": gift.model, "background": gift.background, "pattern": gift.pattern,
