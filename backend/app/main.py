@@ -31,6 +31,7 @@ DEV_OTP_CODE = os.getenv("DEV_OTP_CODE", "123456")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+ADMIN_TELEGRAM_USER_ID = os.getenv("ADMIN_TELEGRAM_USER_ID", "")
 LOGIN_CODE_TTL_MINUTES = int(os.getenv("LOGIN_CODE_TTL_MINUTES", "5"))
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -253,6 +254,12 @@ class SettingsUpdate(BaseModel):
 class BusinessProfileUpdate(BaseModel):
     business_name: str = Field(min_length=2, max_length=120)
     business_description: str | None = Field(default=None, max_length=500)
+
+
+class AdminGrantRequest(BaseModel):
+    user_id: int
+    stars_delta: int = Field(default=0, ge=-1000000, le=1000000)
+    premium_days: int = Field(default=0, ge=-36500, le=36500)
 
 
 class DirectConversationRequest(BaseModel):
@@ -525,6 +532,53 @@ def update_me(payload: ProfileUpdate, db: Session = Depends(get_db), user: User 
         db.rollback()
         raise HTTPException(status_code=409, detail="Это имя пользователя уже занято")
     return {"id": user.id, "display_name": user.display_name, "username": user.username, "bio": user.bio, "avatar_url": user.avatar_url}
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    if not ADMIN_TELEGRAM_USER_ID or not user.telegram_user_id or not hmac.compare_digest(
+        user.telegram_user_id, ADMIN_TELEGRAM_USER_ID
+    ):
+        raise HTTPException(status_code=403, detail="Доступ только владельцу LosGram")
+    return user
+
+
+@app.get("/admin/users")
+def admin_users(q: str = "", db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    term = q.strip()
+    query = select(User).order_by(User.id.desc())
+    if term:
+        query = query.where(or_(User.username.ilike(f"%{term}%"),
+                                User.display_name.ilike(f"%{term}%"),
+                                User.virtual_number.ilike(f"%{term}%")))
+    rows = db.scalars(query.limit(50)).all()
+    now = datetime.now(timezone.utc)
+    return {"items": [{
+        "id": x.id, "display_name": x.display_name, "username": x.username,
+        "virtual_number": x.virtual_number, "stars_balance": x.stars_balance,
+        "premium_until": x.premium_until.isoformat() if x.premium_until else None,
+        "premium_active": bool(x.premium_until and (x.premium_until.replace(tzinfo=timezone.utc)
+            if x.premium_until.tzinfo is None else x.premium_until) > now)
+    } for x in rows]}
+
+
+@app.post("/admin/grant")
+def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
+                admin: User = Depends(require_admin)):
+    target = db.get(User, payload.user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if target.stars_balance + payload.stars_delta < 0:
+        raise HTTPException(status_code=400, detail="Недостаточно звёзд для списания")
+    target.stars_balance += payload.stars_delta
+    if payload.premium_days:
+        current = target.premium_until
+        if current and current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        base = max(current, datetime.now(timezone.utc)) if current else datetime.now(timezone.utc)
+        target.premium_until = base + timedelta(days=payload.premium_days)
+    db.commit()
+    return {"user_id": target.id, "stars_balance": target.stars_balance,
+            "premium_until": target.premium_until.isoformat() if target.premium_until else None}
 
 
 @app.get("/users/search")
