@@ -52,6 +52,12 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80), default="Пользователь")
     username: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    bio: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    settings_json: Mapped[str] = mapped_column(Text, default="{}")
+    business_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    business_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    premium_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stars_balance: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -109,6 +115,12 @@ _user_column_types = {
     "display_name": "VARCHAR(80) DEFAULT 'Пользователь'",
     "username": "VARCHAR(32)",
     "avatar_url": "VARCHAR(500)",
+    "bio": "VARCHAR(160)",
+    "settings_json": "TEXT DEFAULT '{}'",
+    "business_name": "VARCHAR(120)",
+    "business_description": "VARCHAR(500)",
+    "premium_until": "TIMESTAMP WITH TIME ZONE",
+    "stars_balance": "INTEGER DEFAULT 0",
     "created_at": "TIMESTAMP WITH TIME ZONE",
     "virtual_number": "VARCHAR(16)",
 }
@@ -225,8 +237,22 @@ class TelegramVerifyRequest(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    display_name: str = Field(min_length=1, max_length=80)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
     username: str | None = Field(default=None, min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_]+$")
+    bio: str | None = Field(default=None, max_length=160)
+    avatar_url: str | None = Field(default=None, max_length=500)
+
+
+class SettingsUpdate(BaseModel):
+    notifications_enabled: bool | None = None
+    show_phone: bool | None = None
+    show_last_seen: bool | None = None
+    theme: str | None = Field(default=None, pattern=r"^(dark|light|system)$")
+
+
+class BusinessProfileUpdate(BaseModel):
+    business_name: str = Field(min_length=2, max_length=120)
+    business_description: str | None = Field(default=None, max_length=500)
 
 
 class DirectConversationRequest(BaseModel):
@@ -445,20 +471,60 @@ def verify_code(payload: VerifyRequest, db: Session = Depends(get_db)):
 
 @app.get("/me")
 def me(user: User = Depends(current_user)):
+    premium_active = bool(user.premium_until and (user.premium_until.replace(tzinfo=timezone.utc) if user.premium_until.tzinfo is None else user.premium_until) > datetime.now(timezone.utc))
     return {"id": user.id, "losgram_id": user.losgram_id, "virtual_number": user.virtual_number, "phone": user.phone, "display_name": user.display_name,
-            "username": user.username, "avatar_url": user.avatar_url}
+            "username": user.username, "avatar_url": user.avatar_url, "bio": user.bio,
+            "business_name": user.business_name, "business_description": user.business_description,
+            "premium_active": premium_active, "premium_until": user.premium_until.isoformat() if user.premium_until else None,
+            "stars_balance": user.stars_balance}
+
+
+@app.get("/me/settings")
+def get_settings(user: User = Depends(current_user)):
+    try:
+        settings = json.loads(user.settings_json or "{}")
+    except (TypeError, ValueError):
+        settings = {}
+    defaults = {"notifications_enabled": True, "show_phone": False, "show_last_seen": True, "theme": "dark"}
+    return {**defaults, **settings}
+
+
+@app.patch("/me/settings")
+def patch_settings(payload: SettingsUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    try:
+        settings = json.loads(user.settings_json or "{}")
+    except (TypeError, ValueError):
+        settings = {}
+    settings.update(payload.model_dump(exclude_none=True))
+    user.settings_json = json.dumps(settings, ensure_ascii=False)
+    db.commit()
+    return settings
+
+
+@app.put("/me/business")
+def update_business(payload: BusinessProfileUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    user.business_name = payload.business_name
+    user.business_description = payload.business_description
+    db.commit()
+    return {"business_name": user.business_name, "business_description": user.business_description}
 
 
 @app.patch("/me")
 def update_me(payload: ProfileUpdate, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    user.display_name = payload.display_name
-    user.username = payload.username
+    if payload.display_name is not None:
+        user.display_name = payload.display_name
+    if payload.username is not None:
+        user.username = payload.username
+    if "bio" in payload.model_fields_set:
+        user.bio = payload.bio
+    if "avatar_url" in payload.model_fields_set:
+        user.avatar_url = payload.avatar_url
     try:
         db.commit()
     except Exception:
         db.rollback()
         raise HTTPException(status_code=409, detail="Это имя пользователя уже занято")
-    return {"id": user.id, "display_name": user.display_name, "username": user.username}
+    return {"id": user.id, "display_name": user.display_name, "username": user.username, "bio": user.bio, "avatar_url": user.avatar_url}
 
 
 @app.get("/users/search")
