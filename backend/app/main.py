@@ -322,6 +322,16 @@ def ensure_global_chat(db: Session, user: User) -> Conversation:
         db.commit()
     return conversation
 
+def add_saved_system_message(db: Session, user: User, body: str) -> None:
+    """Append an account activity notice to this user's private Saved Messages chat."""
+    conversation = ensure_saved_chat(db, user)
+    db.add(Message(conversation_id=conversation.id, sender_id=user.id, body=body))
+    db.commit()
+
+
+def account_event_time() -> str:
+    return datetime.now(timezone.utc).strftime("%d.%m.%Y в %H:%M UTC")
+
 
 class ConnectionHub:
     def __init__(self):
@@ -384,11 +394,20 @@ def issue_telegram_code(db: Session, telegram_user_id: str) -> tuple[User, str]:
         TelegramLoginCode.consumed.is_(False)).update(
             {"consumed": True}, synchronize_session=False)
     code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=LOGIN_CODE_TTL_MINUTES)
     db.add(TelegramLoginCode(
         telegram_user_id=telegram_user_id,
         code_hash=telegram_code_hash(telegram_user_id, code),
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=LOGIN_CODE_TTL_MINUTES)))
+        expires_at=expires_at))
     db.commit()
+    add_saved_system_message(
+        db, user,
+        "🔐 Вход в аккаунт LosGram\\n\\n"
+        f"Код подтверждения: {code}\\n"
+        f"Время запроса: {account_event_time()}\\n"
+        f"Код действует до {expires_at.strftime('%H:%M UTC')}.\\n\\n"
+        "Если это были не вы — никому не сообщайте код и смените доступ к аккаунту."
+    )
     return user, code
 
 
@@ -595,6 +614,27 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
         base = max(current, datetime.now(timezone.utc)) if current else datetime.now(timezone.utc)
         target.premium_until = base + timedelta(days=payload.premium_days)
     db.commit()
+    event_lines = ["⭐ Операция со звёздами LosGram"]
+    if payload.stars_delta > 0:
+        event_lines.append(f"Зачислено: +{payload.stars_delta} ⭐")
+    elif payload.stars_delta < 0:
+        event_lines.append(f"Списано: {abs(payload.stars_delta)} ⭐")
+    event_lines.append(f"Новый баланс: {target.stars_balance} ⭐")
+    if payload.premium_days > 0:
+        event_lines.extend([
+            "",
+            f"💎 LosGram Premium активирован на {payload.premium_days} дн.",
+            f"Действует до: {target.premium_until.strftime('%d.%m.%Y %H:%M UTC')}",
+        ])
+    elif payload.premium_days < 0:
+        event_lines.extend([
+            "",
+            f"Изменение Premium: {payload.premium_days} дн.",
+            f"Новая дата окончания: {target.premium_until.strftime('%d.%m.%Y %H:%M UTC') if target.premium_until else 'не активен'}",
+        ])
+    event_lines.append(f"Время операции: {account_event_time()}")
+    if payload.stars_delta or payload.premium_days:
+        add_saved_system_message(db, target, "\\n".join(event_lines))
     return {"user_id": target.id, "stars_balance": target.stars_balance,
             "premium_until": target.premium_until.isoformat() if target.premium_until else None}
 
