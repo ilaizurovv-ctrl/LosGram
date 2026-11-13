@@ -639,6 +639,10 @@ private fun ProfileSettingsScreen(
                     if (showProfile) {
                         item {
                             val context = LocalContext.current
+                            var showChannel by remember {
+                                mutableStateOf(context.getSharedPreferences("losgram_profile", Context.MODE_PRIVATE)
+                                    .getBoolean("show_channel", false))
+                            }
                             val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                                 if (uri != null) {
                                     context.getSharedPreferences("losgram_profile", Context.MODE_PRIVATE).edit().putString("avatar_uri", uri.toString()).apply()
@@ -698,26 +702,26 @@ private fun ProfileSettingsScreen(
                                     .padding(10.dp), contentAlignment = Alignment.Center) {
                                     Text("♫  Добавить музыкальный статус  ›", color = White, fontSize = 14.sp)
                                 }
-                                Spacer(Modifier.height(30.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Канал", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Создать", color = Blue, fontSize = 13.sp,
-                                        modifier = Modifier.clickable { message = "Создание каналов пока не подключено" })
-                                }
-                                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 26.dp)
-                                    .clip(RoundedCornerShape(18.dp)).background(Panel).padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.size(68.dp).clip(CircleShape).background(Blue),
-                                        contentAlignment = Alignment.Center) { Text(displayName.take(1).uppercase(),
-                                        color = White, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
-                                    Spacer(Modifier.width(14.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text("Мой BIO", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                                        Text(if (bio.isNotBlank()) bio else "Добавьте описание профиля",
-                                            color = Muted, fontSize = 13.sp, maxLines = 2)
+                                if (showChannel) {
+                                    Spacer(Modifier.height(22.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Канал", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Мой канал", color = Muted, fontSize = 12.sp)
                                     }
-                                    Text("›", color = Muted, fontSize = 24.sp)
+                                    Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp)
+                                        .clip(RoundedCornerShape(16.dp)).background(Panel).padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(52.dp).clip(CircleShape).background(Blue),
+                                            contentAlignment = Alignment.Center) {
+                                            Text(displayName.take(1).uppercase().ifBlank { "L" }, color = White, fontSize = 22.sp)
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Мой канал", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Канал ещё не создан", color = Muted, fontSize = 12.sp)
+                                        }
+                                    }
                                 }
                                 Text(session.virtualNumber, color = White, fontSize = 20.sp)
                                 Text("Телефон", color = Muted, fontSize = 13.sp)
@@ -753,6 +757,13 @@ private fun ProfileSettingsScreen(
                                         minLines = 3, label = { Text("О себе") })
                                     OutlinedTextField(avatarUrl, { avatarUrl = it.take(500) }, Modifier.fillMaxWidth(),
                                         singleLine = true, label = { Text("Ссылка на фото HTTPS") })
+                                    Spacer(Modifier.height(8.dp))
+                                    PreferenceSwitch("Показывать канал в профиле",
+                                        "Добавить раздел канала на страницу профиля", showChannel) { enabled ->
+                                        showChannel = enabled
+                                        context.getSharedPreferences("losgram_profile", Context.MODE_PRIVATE)
+                                            .edit().putBoolean("show_channel", enabled).apply()
+                                    }
                                     Button(onClick = { saveProfile(); expandedSetting = "" }, enabled = !saving && displayName.isNotBlank(),
                                         modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
                                         Text(if (saving) "Сохраняем..." else "Сохранить изменения")
