@@ -357,9 +357,15 @@ class BusinessProfileUpdate(BaseModel):
 class AdminGiftGrantRequest(BaseModel):
     user_id: int
     name: str = Field(min_length=1, max_length=80)
-    model: str = Field(min_length=1, max_length=80)
-    background: str = Field(min_length=1, max_length=80)
-    pattern: str = Field(min_length=1, max_length=80)
+    model: str = Field(default="Не улучшен", min_length=1, max_length=80)
+    background: str = Field(default="Не улучшен", min_length=1, max_length=80)
+    pattern: str = Field(default="Не улучшен", min_length=1, max_length=80)
+
+
+class AdminGiftUpgradeRequest(BaseModel):
+    model: str | None = Field(default=None, min_length=1, max_length=80)
+    background: str | None = Field(default=None, min_length=1, max_length=80)
+    pattern: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 class NFTListingCreateRequest(BaseModel):
@@ -792,6 +798,38 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
 
 
 
+@app.get("/admin/gifts")
+def admin_list_gifts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    rows = db.execute(select(CollectibleGift, User).join(User, User.id == CollectibleGift.user_id).order_by(CollectibleGift.number.desc()).limit(300)).all()
+    return {"items": [{"id": gift.id, "number": gift.number, "name": gift.name, "model": gift.model, "background": gift.background, "pattern": gift.pattern, "user_id": owner.id, "user_name": owner.display_name, "username": owner.username, "losgram_id": owner.losgram_id} for gift, owner in rows]}
+
+
+@app.patch("/admin/gifts/{gift_id}/upgrade")
+def admin_upgrade_gift(gift_id: int, payload: AdminGiftUpgradeRequest, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    gift = db.scalar(select(CollectibleGift).where(CollectibleGift.id == gift_id).with_for_update())
+    if not gift:
+        raise HTTPException(status_code=404, detail="NFT не найден")
+    changed = []
+    for field_name in ("model", "background", "pattern"):
+        value = getattr(payload, field_name)
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(status_code=400, detail="Значение улучшения не может быть пустым")
+            setattr(gift, field_name, value)
+            changed.append(field_name)
+    if not changed:
+        raise HTTPException(status_code=400, detail="Укажите хотя бы одно улучшение")
+    db.commit()
+    db.refresh(gift)
+    owner = db.get(User, gift.user_id)
+    try:
+        add_saved_system_message(db, owner, f"✨ Ваш NFT «{gift.name}» №{gift.number} улучшен! Модель: {gift.model}; фон: {gift.background}; узор: {gift.pattern}.")
+    except Exception:
+        db.rollback()
+    return {"id": gift.id, "number": gift.number, "name": gift.name, "model": gift.model, "background": gift.background, "pattern": gift.pattern, "user_id": gift.user_id}
+
+
 @app.post("/admin/gifts/grant")
 def admin_grant_gift(payload: AdminGiftGrantRequest, db: Session = Depends(get_db),
                      admin: User = Depends(require_admin)):
@@ -800,8 +838,9 @@ def admin_grant_gift(payload: AdminGiftGrantRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     last_number = db.scalar(select(func.max(CollectibleGift.number))) or 0
     gift = CollectibleGift(user_id=target.id, name=payload.name.strip(),
-        model=payload.model.strip(), background=payload.background.strip(),
-        pattern=payload.pattern.strip(), number=last_number + 1)
+        model=payload.model.strip() or "Не улучшен",
+        background=payload.background.strip() or "Не улучшен",
+        pattern=payload.pattern.strip() or "Не улучшен", number=last_number + 1)
     db.add(gift)
     db.commit()
     db.refresh(gift)
