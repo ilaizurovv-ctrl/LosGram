@@ -227,6 +227,18 @@ def participant(db: Session, conversation_id: int, user_id: int) -> bool:
     )) is not None
 
 
+def ensure_global_chat(db: Session, user: User) -> Conversation:
+    conversation = db.scalar(select(Conversation).where(Conversation.kind == "global").order_by(Conversation.id))
+    if not conversation:
+        conversation = Conversation(kind="global", title="LosGram")
+        db.add(conversation)
+        db.flush()
+    if not participant(db, conversation.id, user.id):
+        db.add(Participant(conversation_id=conversation.id, user_id=user.id))
+        db.commit()
+    return conversation
+
+
 class ConnectionHub:
     def __init__(self):
         self.connections: dict[int, set[WebSocket]] = {}
@@ -452,6 +464,7 @@ def create_direct(payload: DirectConversationRequest, db: Session = Depends(get_
 
 @app.get("/conversations")
 def list_conversations(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    ensure_global_chat(db, user)
     memberships = db.scalars(select(Participant).where(Participant.user_id == user.id)).all()
     result = []
     for membership in memberships:
