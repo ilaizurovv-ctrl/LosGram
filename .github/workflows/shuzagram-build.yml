@@ -1,0 +1,87 @@
+name: LosGram (ShuzaGram base) Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [shuzagram-based-rebuild]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout LosGram and ShuzaGram sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install native build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Configure LosGram identity and build credentials
+        working-directory: upstream/ShuzaGram
+        env:
+          TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID }}
+          TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
+        run: |
+          set -euo pipefail
+          test -n "$TELEGRAM_APP_ID" || { echo "::error::Add TELEGRAM_APP_ID to LosGram Actions secrets."; exit 1; }
+          test -n "$TELEGRAM_APP_HASH" || { echo "::error::Add TELEGRAM_APP_HASH to LosGram Actions secrets."; exit 1; }
+          python3 - <<'PY'
+          import os, pathlib, re
+          root = pathlib.Path(".")
+          props = root / "gradle.properties"
+          text = props.read_text()
+          text = re.sub(r"(?m)^APP_PACKAGE=.*$", "APP_PACKAGE=org.losgram.messenger", text)
+          if "APP_PACKAGE=" not in text:
+              text += "\\nAPP_PACKAGE=org.losgram.messenger\\n"
+          text = re.sub(r"(?m)^APP_VERSION_NAME=.*$", "APP_VERSION_NAME=1.0.0", text)
+          text = re.sub(r"(?m)^APP_VERSION_CODE=.*$", "APP_VERSION_CODE=1", text)
+          props.write_text(text)
+          buildvars = root / "TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java"
+          source = buildvars.read_text()
+          source = re.sub(r"public static int APP_ID = [^;]+;", "public static int APP_ID = " + os.environ["TELEGRAM_APP_ID"] + ";", source)
+          source = re.sub(r'public static String APP_HASH = "[^"]*";', 'public static String APP_HASH = "' + os.environ["TELEGRAM_APP_HASH"] + '";', source)
+          buildvars.write_text(source)
+          strings = root / "TMessagesProj/src/main/res/values/strings.xml"
+          strings.write_text(strings.read_text().replace(">ShuzaGram<", ">LosGram<").replace(">ShuzaGram Beta<", ">LosGram Beta<"))
+          PY
+
+      - name: Prepare local debug signing key and optional Firebase stub
+        working-directory: upstream/ShuzaGram
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/losgram-debug.keystore" -storepass android -alias androidkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LosGram Debug,O=LosGram,C=US"
+          mkdir -p TMessagesProj
+          cat > TMessagesProj/google-services.json <<'JSON'
+          {"project_info":{"project_number":"000000000000","project_id":"losgram-build-placeholder","storage_bucket":"losgram-build-placeholder.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:000000000000:android:0000000000000000","android_client_info":{"package_name":"org.losgram.messenger"}},"api_key":[{"current_key":"placeholder"}]}],"configuration_version":"1"}
+          JSON
+
+      - name: Build universal debug APK
+        working-directory: upstream/ShuzaGram
+        run: |
+          ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug \
+            -PRELEASE_STORE_FILE="$RUNNER_TEMP/losgram-debug.keystore" \
+            -PRELEASE_STORE_PASSWORD=android \
+            -PRELEASE_KEY_ALIAS=androidkey \
+            -PRELEASE_KEY_PASSWORD=android
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LosGram-debug-universal
+          path: upstream/ShuzaGram/TMessagesProj_App/build/outputs/apk/afat/debug/app.apk
+          if-no-files-found: error
+          retention-days: 14
