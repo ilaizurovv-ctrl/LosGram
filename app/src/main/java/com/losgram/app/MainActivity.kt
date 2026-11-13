@@ -568,6 +568,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     var replyTo by remember { mutableStateOf<MessageItem?>(null) }
     var editing by remember { mutableStateOf<MessageItem?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var showGiftMarket by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -584,6 +585,11 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
             MessageItem(item.optInt("id"), sender, item.optString("body"), sender == session.userId,
                 parentId, parent?.optString("body"), item.optBoolean("edited"), item.optBoolean("deleted"))
         }
+    }
+
+    if (showGiftMarket) {
+        LosGramGiftMarketScreen(recipient = chat.name, onBack = { showGiftMarket = false })
+        return
     }
 
     LaunchedEffect(chat.id) {
@@ -646,6 +652,8 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                         Text("личный чат LosGram", color = Color(0xFF9EABB7), fontSize = 12.sp)
                     }
                 }
+                if (!showSearch && chat.id > 0) Text("🎁", fontSize = 22.sp,
+                    modifier = Modifier.clickable { showGiftMarket = true }.padding(start = 10.dp))
                 Text(if (showSearch) "✕" else "⌕", color = White, fontSize = 24.sp,
                     modifier = Modifier.clickable { showSearch = !showSearch; searchQuery = "" }.padding(start = 12.dp))
             }
@@ -1130,6 +1138,85 @@ private fun ProfileSettingsScreen(
     }
 }
 
+
+
+@Composable
+private fun LosGramGiftMarketScreen(recipient: String, onBack: () -> Unit) {
+    data class Gift(val title: String, val emoji: String, val price: Int, val category: String)
+    val gifts = listOf(
+        Gift("Мишка", "🧸", 15, "Обычные"), Gift("Сердце с бантом", "💝", 15, "Обычные"),
+        Gift("Подарок", "🎁", 25, "Обычные"), Gift("Букет", "💐", 50, "Обычные"),
+        Gift("Neon Cat", "🐱", 250, "Коллекционные"), Gift("Golden Ghost", "👻", 350, "Коллекционные"),
+        Gift("Pixel Dragon", "🐉", 500, "Коллекционные"), Gift("Royal Crown", "👑", 750, "Коллекционные")
+    )
+    var category by remember { mutableStateOf("Все") }
+    var selected by remember { mutableStateOf<Gift?>(null) }
+    var notice by remember { mutableStateOf("") }
+    val visible = gifts.filter { category == "Все" || it.category == category }
+    Surface(Modifier.fillMaxSize(), color = Color(0xFF0E1621)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().height(60.dp).background(Color(0xFF202B36)).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 32.sp, modifier = Modifier.clickable { onBack() }.padding(end = 12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Маркет подарков", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("Получатель: " + recipient, color = Color(0xFF9EABB7), fontSize = 12.sp)
+                }
+                Text("✕", color = White, fontSize = 20.sp, modifier = Modifier.clickable { onBack() }.padding(8.dp))
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
+                Spacer(Modifier.height(16.dp))
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFF1B2A3A)).padding(18.dp)) {
+                    Text("🎁", fontSize = 38.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Подарите эмоции", color = White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("Выберите подарок для пользователя " + recipient, color = Color(0xFFBDCAD6), fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color(0xFF202B36)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("Все", "Обычные", "Коллекционные").forEach { tab ->
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (category == tab) Color(0xFF355D80) else Color.Transparent)
+                            .clickable { category = tab }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) {
+                            Text(tab, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(if (category == "Коллекционные") "Коллекционные подарки" else "Подарки", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                visible.chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        pair.forEach { gift ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(Color(0xFF202B36))
+                                .clickable { selected = gift }.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF17212B)), contentAlignment = Alignment.Center) {
+                                    Text(gift.emoji, fontSize = 62.sp)
+                                }
+                                Spacer(Modifier.height(9.dp))
+                                Text(gift.title, color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(if (gift.category == "Коллекционные") "Коллекционный подарок" else "Подарок LosGram", color = Color(0xFF9EABB7), fontSize = 11.sp)
+                                Spacer(Modifier.height(8.dp))
+                                Text("⭐ " + gift.price, color = Color(0xFFFFC65C), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
+    }
+    selected?.let { gift ->
+        AlertDialog(onDismissRequest = { selected = null }, title = { Text("Отправить " + gift.title + "?") },
+            text = { Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(gift.emoji, fontSize = 64.sp); Text("Получатель: " + recipient); Text("Стоимость: ⭐ " + gift.price)
+                Text("Покупка и доставка пока требуют подключения серверной операции.")
+            } },
+            confirmButton = { TextButton(onClick = { selected = null; notice = "Подарок выбран. Отправка будет доступна после подключения покупки и доставки." }) { Text("Понятно") } },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("Назад") } })
+    }
+    if (notice.isNotBlank()) AlertDialog(onDismissRequest = { notice = "" }, text = { Text(notice) },
+        confirmButton = { TextButton(onClick = { notice = "" }) { Text("Закрыть") } })
+}
 
 @Composable
 private fun LosGramMarketScreen(onBack: () -> Unit, balance: Int = 0) {
