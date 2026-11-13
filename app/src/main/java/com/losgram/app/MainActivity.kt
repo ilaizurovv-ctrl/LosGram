@@ -611,7 +611,7 @@ private fun ProfileSettingsScreen(
         }
     }
 
-    val link = if (username.isNotBlank()) "https://losgram.app/$username" else "Сначала задайте username"
+    val link = if (username.isNotBlank()) "@$username" else "Сначала задайте username"
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 20.dp),
@@ -677,7 +677,7 @@ private fun ProfileSettingsScreen(
                                 Text("${bio.length}/160", color = Muted, fontSize = 11.sp,
                                     modifier = Modifier.align(Alignment.End))
                                 Spacer(Modifier.height(10.dp))
-                                Text("Ссылка на профиль", color = Muted, fontSize = 12.sp)
+                                Text("Имя пользователя для поиска", color = Muted, fontSize = 12.sp)
                                 Text(link, color = Blue, fontSize = 14.sp)
                                 Spacer(Modifier.height(14.dp))
                                 Button(onClick = { saveProfile() }, enabled = !saving && displayName.isNotBlank(),
