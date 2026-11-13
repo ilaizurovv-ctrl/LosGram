@@ -146,6 +146,18 @@ class CollectibleGift(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class NFTStockListing(Base):
+    __tablename__ = "nft_stock_listings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    price: Mapped[int] = mapped_column(Integer)
+    total_quantity: Mapped[int] = mapped_column(Integer)
+    remaining_quantity: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class NFTListing(Base):
     __tablename__ = "nft_listings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -382,6 +394,12 @@ class AdminGiftUpgradeRequest(BaseModel):
 
 class NFTListingCreateRequest(BaseModel):
     price: int = Field(ge=1, le=10000000)
+
+
+class NFTStockListingCreateRequest(BaseModel):
+    name: str = Field(default="Light Sword", min_length=1, max_length=80)
+    price: int = Field(default=200, ge=1, le=10000000)
+    quantity: int = Field(default=50, ge=1, le=10000)
 
 
 class AdminTelegramGiftPublishRequest(BaseModel):
@@ -1202,7 +1220,103 @@ def nft_market(db: Session = Depends(get_db), user: User = Depends(current_user)
         "seller_name": seller.display_name, "seller_username": seller.username,
         "created_at": listing.created_at.isoformat(),
         "is_mine": listing.seller_id == user.id,
-    } for listing, gift, seller in rows]}
+    items = [{
+        "listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
+        "model": gift.model, "background": gift.background, "pattern": gift.pattern,
+        "number": gift.number, "price": listing.price, "seller_id": seller.id,
+        "seller_name": seller.display_name, "seller_username": seller.username,
+        "created_at": listing.created_at.isoformat(), "is_mine": listing.seller_id == user.id,
+        "listing_type": "individual"
+    } for listing, gift, seller in rows]
+    stock_rows = db.execute(
+        select(NFTStockListing, User)
+        .join(User, User.id == NFTStockListing.seller_id)
+        .where(NFTStockListing.status.in_(["active", "sold_out"]))
+        .order_by(NFTStockListing.created_at.desc()).limit(100)
+    ).all()
+    items.extend([{
+        "listing_id": -stock.id, "series_id": stock.id, "gift_id": 0,
+        "name": stock.name, "model": "Не улучшен", "background": "Не улучшен",
+        "pattern": "Не улучшен", "number": 0, "price": stock.price,
+        "seller_id": seller.id, "seller_name": seller.display_name,
+        "seller_username": seller.username, "created_at": stock.created_at.isoformat(),
+        "is_mine": stock.seller_id == user.id, "listing_type": "series",
+        "total_quantity": stock.total_quantity, "remaining_quantity": stock.remaining_quantity,
+        "status": stock.status
+    } for stock, seller in stock_rows])
+    return {"items": items}
+
+
+@app.post("/market/nft-series/{series_id}/buy")
+def buy_nft_stock_unit(series_id: int, db: Session = Depends(get_db),
+                       buyer: User = Depends(current_user)):
+    stock = db.scalar(select(NFTStockListing).where(
+        NFTStockListing.id == series_id
+    ).with_for_update())
+    if not stock or stock.status != "active" or stock.remaining_quantity <= 0:
+        raise HTTPException(status_code=404, detail="Коллекция уже распродана")
+    if stock.seller_id == buyer.id:
+        raise HTTPException(status_code=400, detail="Нельзя купить собственный NFT")
+    accounts = db.scalars(select(User).where(User.id.in_([stock.seller_id, buyer.id]))
+        .order_by(User.id).with_for_update().execution_options(populate_existing=True)).all()
+    by_id = {x.id: x for x in accounts}
+    seller, locked_buyer = by_id.get(stock.seller_id), by_id.get(buyer.id)
+    if not seller or not locked_buyer:
+        raise HTTPException(status_code=404, detail="Покупатель или продавец не найден")
+    if locked_buyer.stars_balance < stock.price:
+        raise HTTPException(status_code=400, detail=f"Недостаточно звёзд. Нужно: {stock.price} ⭐")
+    last_number = db.scalar(select(func.max(CollectibleGift.number))) or 0
+    gift = CollectibleGift(user_id=locked_buyer.id, name=stock.name,
+        model="Не улучшен", background="Не улучшен", pattern="Не улучшен",
+        number=last_number + 1)
+    db.add(gift)
+    db.flush()
+    sale = NFTListing(gift_id=gift.id, seller_id=seller.id, buyer_id=locked_buyer.id,
+        price=stock.price, status="sold", sold_at=datetime.now(timezone.utc))
+    db.add(sale)
+    locked_buyer.stars_balance -= stock.price
+    seller.stars_balance += stock.price
+    stock.remaining_quantity -= 1
+    if stock.remaining_quantity == 0:
+        stock.status = "sold_out"
+    db.commit()
+    db.refresh(gift)
+    try:
+        add_saved_system_message(locked_buyer,
+            f"⚔️ Вы купили NFT «{gift.name}» №{gift.number} за {stock.price} ⭐. Он добавлен в вашу коллекцию.")
+        add_saved_system_message(seller,
+            f"⭐ Продан экземпляр «{gift.name}» №{gift.number} за {stock.price} ⭐. Остаток: {stock.remaining_quantity}/{stock.total_quantity}.")
+    except Exception:
+        db.rollback()
+    return {"ok": True, "listing_id": sale.id, "gift_id": gift.id, "name": gift.name,
+        "number": gift.number, "price": stock.price, "remaining_quantity": stock.remaining_quantity,
+        "total_quantity": stock.total_quantity, "status": stock.status,
+        "buyer_balance": locked_buyer.stars_balance, "seller_balance": seller.stars_balance}
+
+
+@app.post("/admin/nft-series")
+def create_nft_stock_listing(payload: NFTStockListingCreateRequest,
+                             db: Session = Depends(get_db),
+                             admin: User = Depends(require_admin)):
+    existing = db.scalar(select(NFTStockListing).where(
+        NFTStockListing.seller_id == admin.id,
+        NFTStockListing.name == payload.name.strip(),
+        NFTStockListing.status.in_(["active", "sold_out"])
+    ).order_by(NFTStockListing.id.desc()))
+    if existing:
+        return {"ok": True, "created": False, "series_id": existing.id,
+            "name": existing.name, "price": existing.price,
+            "total_quantity": existing.total_quantity,
+            "remaining_quantity": existing.remaining_quantity, "status": existing.status}
+    stock = NFTStockListing(seller_id=admin.id, name=payload.name.strip(),
+        price=payload.price, total_quantity=payload.quantity,
+        remaining_quantity=payload.quantity, status="active")
+    db.add(stock)
+    db.commit()
+    db.refresh(stock)
+    return {"ok": True, "created": True, "series_id": stock.id,
+        "name": stock.name, "price": stock.price, "total_quantity": stock.total_quantity,
+        "remaining_quantity": stock.remaining_quantity, "status": stock.status}
 
 
 @app.post("/market/nfts/{listing_id}/buy")

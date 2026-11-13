@@ -1487,16 +1487,28 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                     else "Пока нет NFT на продаже. Загляните позже или выставьте свой подарок из коллекции.",
                     color = Muted, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             } else LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(14.dp)) {
-                items(filtered, key = { it.optInt("listing_id") }) { nft ->
+                items(filtered, key = { if (it.optString("listing_type") == "series") "series-" + it.optInt("series_id") else "listing-" + it.optInt("listing_id") }) { nft ->
+                    val isSeries = nft.optString("listing_type") == "series"
                     Row(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF202B36)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(76.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF342B47)),
-                            contentAlignment = Alignment.Center) { Text("💎", fontSize = 38.sp) }
+                        Box(Modifier.size(76.dp).clip(RoundedCornerShape(16.dp))
+                            .background(if (isSeries) Color(0xFF123D4B) else Color(0xFF342B47)),
+                            contentAlignment = Alignment.Center) {
+                            Text(if (isSeries) "⚔️" else "💎", fontSize = 38.sp)
+                        }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(nft.optString("name"), color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text("#" + nft.optInt("number") + " · " + nft.optString("model"), color = Muted, fontSize = 12.sp)
-                            Text("Фон: " + nft.optString("background") + " · Узор: " + nft.optString("pattern"), color = Muted, fontSize = 11.sp)
+                            if (isSeries) {
+                                Text("Коллекция LosGram · базовый NFT", color = Muted, fontSize = 12.sp)
+                                Text("Остаток: ${nft.optInt("remaining_quantity")} из ${nft.optInt("total_quantity")}",
+                                    color = if (nft.optInt("remaining_quantity") > 0) Color(0xFF8BD49B) else Color(0xFFFF9999),
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Модель, фон и узор пока не улучшены", color = Muted, fontSize = 11.sp)
+                            } else {
+                                Text("#" + nft.optInt("number") + " · " + nft.optString("model"), color = Muted, fontSize = 12.sp)
+                                Text("Фон: " + nft.optString("background") + " · Узор: " + nft.optString("pattern"), color = Muted, fontSize = 11.sp)
+                            }
                             Text("Продавец: " + nft.optString("seller_name"), color = Blue, fontSize = 12.sp,
                                 modifier = Modifier.clickable { scope.launch { try { loadSellerProfile(nft.optInt("seller_id")) } catch (e: Exception) { message = e.message ?: "Не удалось открыть профиль" } } })
                             Text("⭐ " + nft.optInt("price"), color = Color(0xFFFFD76A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1505,7 +1517,10 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                                     modifier = Modifier.padding(top = 5.dp))
                                 Text("Снять с продажи", color = Color(0xFFFF9999), fontSize = 12.sp,
                                     modifier = Modifier.clickable { cancelSelected = nft }.padding(top = 5.dp))
-                            } else Text("Купить", color = White, fontWeight = FontWeight.SemiBold,
+                            } else if (isSeries && nft.optInt("remaining_quantity") == 0) {
+                                Text("Распродано", color = Color(0xFFFF9999), fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(top = 6.dp))
+                            } else Text(if (isSeries) "Купить за ⭐" else "Купить", color = White, fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(12.dp))
                                     .background(Blue).clickable { selected = nft }.padding(horizontal = 18.dp, vertical = 8.dp))
                         }
@@ -1517,15 +1532,21 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
     }
     selected?.let { nft ->
         AlertDialog(onDismissRequest = { if (busyId == 0) selected = null },
-            title = { Text("Купить NFT?") },
-            text = { Text("«" + nft.optString("name") + "» №" + nft.optInt("number") + " за " + nft.optInt("price") + " ⭐. Звёзды будут списаны с вашего баланса, NFT перейдёт в вашу коллекцию, а продавец получит оплату.") },
+            title = { Text(if (nft.optString("listing_type") == "series") "Купить экземпляр Light Sword?" else "Купить NFT?") },
+            text = { Text(if (nft.optString("listing_type") == "series")
+                "Light Sword за ${nft.optInt("price")} ⭐. Вы получите отдельный NFT с уникальным номером. Остаток: ${nft.optInt("remaining_quantity")} из ${nft.optInt("total_quantity")}."
+                else "«" + nft.optString("name") + "» №" + nft.optInt("number") + " за " + nft.optInt("price") + " ⭐. Звёзды будут списаны с вашего баланса, NFT перейдёт в вашу коллекцию, а продавец получит оплату.") },
             confirmButton = { TextButton(enabled = busyId == 0, onClick = {
                 val id = nft.optInt("listing_id")
                 scope.launch {
                     busyId = id
                     try {
-                        val result = api("/market/nfts/" + id + "/buy", session.token, "POST", JSONObject())
-                        message = "Покупка успешна: NFT «" + result.optString("name") + "» добавлен в вашу коллекцию."
+                        val result = if (nft.optString("listing_type") == "series")
+                            api("/market/nft-series/" + nft.optInt("series_id") + "/buy", session.token, "POST", JSONObject())
+                        else api("/market/nfts/" + id + "/buy", session.token, "POST", JSONObject())
+                        message = if (nft.optString("listing_type") == "series")
+                            "Покупка успешна: Light Sword №${result.optInt("number")}. Остаток: ${result.optInt("remaining_quantity")} из ${result.optInt("total_quantity")}."
+                        else "Покупка успешна: NFT «" + result.optString("name") + "» добавлен в вашу коллекцию."
                         selected = null
                         refresh()
                     } catch (e: Exception) { message = e.message ?: "Покупка не удалась" }
@@ -2173,6 +2194,22 @@ private fun OwnerPanel(session: LoginSession) {
                 Text("Выдача звёзд и NFT-подарков", color = Muted, fontSize = 12.sp)
             }
             Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(10.dp))
+        Button(onClick = {
+            scope.launch {
+                busy = true
+                try {
+                    val result = api("/admin/nft-series", session.token, "POST",
+                        JSONObject().put("name", "Light Sword").put("price", 200).put("quantity", 50))
+                    status = if (result.optBoolean("created")) "Карточка Light Sword опубликована: 50 экземпляров по 200 ⭐."
+                        else "Light Sword уже существует: ${result.optInt("remaining_quantity")} из ${result.optInt("total_quantity")} по 200 ⭐."
+                } catch (e: Exception) { status = e.message ?: "Не удалось опубликовать Light Sword" }
+                finally { busy = false }
+            }
+        }, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF267D9A))) {
+            Text(if (busy) "Публикуем..." else "⚔️ Опубликовать Light Sword · 50 × 200 ⭐", color = White)
         }
         Spacer(Modifier.height(10.dp))
         Button(onClick = {
