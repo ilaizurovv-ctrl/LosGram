@@ -903,8 +903,8 @@ def buy_nft_listing(listing_id: int, db: Session = Depends(get_db),
         listing.status = "cancelled"
         db.commit()
         raise HTTPException(status_code=409, detail="Владелец NFT изменился. Объявление снято")
-    seller = db.scalar(select(User).where(User.id == listing.seller_id).with_for_update())
-    locked_buyer = db.scalar(select(User).where(User.id == buyer.id).with_for_update())
+    seller = db.scalar(select(User).where(User.id == listing.seller_id).with_for_update().execution_options(populate_existing=True))
+    locked_buyer = db.scalar(select(User).where(User.id == buyer.id).with_for_update().execution_options(populate_existing=True))
     if not seller or not locked_buyer:
         raise HTTPException(status_code=404, detail="Покупатель или продавец не найден")
     price = listing.price
@@ -935,11 +935,16 @@ def buy_nft_listing(listing_id: int, db: Session = Depends(get_db),
 
 @app.get("/me/gifts")
 def my_collectible_gifts(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    gifts = db.scalars(select(CollectibleGift).where(
-        CollectibleGift.user_id == user.id).order_by(CollectibleGift.number.desc())).all()
-    return {"items": [{"id": g.id, "name": g.name, "model": g.model,
-        "background": g.background, "pattern": g.pattern, "number": g.number,
-        "created_at": g.created_at.isoformat()} for g in gifts]}
+    rows = db.execute(select(CollectibleGift, NFTListing).outerjoin(
+        NFTListing, NFTListing.gift_id == CollectibleGift.id
+    ).where(CollectibleGift.user_id == user.id).order_by(CollectibleGift.number.desc())).all()
+    return {"items": [{
+        "id": gift.id, "name": gift.name, "model": gift.model,
+        "background": gift.background, "pattern": gift.pattern, "number": gift.number,
+        "created_at": gift.created_at.isoformat(),
+        "listing_id": listing.id if listing and listing.status == "active" else None,
+        "listing_price": listing.price if listing and listing.status == "active" else None,
+    } for gift, listing in rows]}
 
 
 def bot_token_hash(token: str) -> str:
