@@ -1024,7 +1024,7 @@ private fun ProfileSettingsScreen(
                                 SettingsEntry("⭐", Color(0xFF8D68F5), "LosGram Premium",
                                     if (premiumActive) "Подписка активна" else "Подключить Premium и управлять подпиской", "LosGram Premium", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
-                                    "Баланс, пополнение и история операций", "Звёзды LosGram", expandedSetting) { showStarsPage = true }
+                                    "Покупки, переводы и история операций", "Звёзды LosGram", expandedSetting) { showStarsPage = true }
                                 SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
                                     "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
@@ -1072,11 +1072,24 @@ private fun StarsWalletScreen(balance: Int, onBack: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = Color.Black) { Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) { Text("‹", color = White, fontSize = 36.sp, modifier = Modifier.clickable { onBack() }.padding(end = 18.dp)); Text("Звёзды LosGram", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(18.dp)); Text("⭐", fontSize = 150.sp, modifier = Modifier.graphicsLayer { rotationY = angle; cameraDistance = 18f * density })
-            Spacer(Modifier.height(24.dp)); Text("Звёзды LosGram", color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            Box(Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                Text("⭐", fontSize = 150.sp, modifier = Modifier.graphicsLayer {
+                    rotationY = angle
+                    rotationZ = kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * 5f
+                    cameraDistance = 18f * density
+                })
+            }
+            Spacer(Modifier.height(8.dp)); Text("Звёзды LosGram", color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp)); Text("Звёзды LosGram нужны для оплаты контента и услуг в мини-приложениях.", color = White, fontSize = 16.sp, lineHeight = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Text("Подробнее о звёздах  ›", color = Color(0xFFE06A6A), modifier = Modifier.clickable { notice = "Звёзды LosGram — внутренняя валюта для оплаты цифрового контента и услуг." }.padding(top = 4.dp))
-            Spacer(Modifier.height(58.dp)); Text("🌟  $balance", color = Color(0xFFFFD76A), fontSize = 42.sp, fontWeight = FontWeight.Bold); Text("Ваш баланс", color = White, fontSize = 17.sp)
+            Spacer(Modifier.height(112.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🌟", fontSize = 42.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(balance.toString(), color = White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+            }
+            Text("Ваш баланс", color = White, fontSize = 17.sp)
             Spacer(Modifier.height(22.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = { notice = "Покупка звёзд пока не подключена." }, modifier = Modifier.weight(1f).height(58.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(40.dp)) { Text("⊕  Пополнить", color = Color.Black) }
                 Button(onClick = { notice = "Статистика появится после подключения журнала транзакций." }, modifier = Modifier.weight(1f).height(58.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(40.dp)) { Text("▥  Статистика", color = Color.Black) } }
