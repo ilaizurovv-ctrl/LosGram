@@ -726,8 +726,27 @@ private fun ProfileSettingsScreen(
                     } else {
                         item {
                             Column(Modifier.fillMaxWidth()) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(Modifier.size(68.dp).clip(CircleShape).background(Blue),
+                                        contentAlignment = Alignment.Center) {
+                                        Text(displayName.trim().take(1).uppercase().ifBlank { "L" },
+                                            color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Spacer(Modifier.width(14.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(displayName.ifBlank { "Пользователь LosGram" },
+                                            color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("${session.virtualNumber} • ${if (username.isNotBlank()) "@$username" else "username не задан"}",
+                                            color = Muted, fontSize = 13.sp)
+                                    }
+                                    Text("›", color = Muted, fontSize = 26.sp,
+                                        modifier = Modifier.clickable { onBack(); }.padding(horizontal = 6.dp))
+                                }
                                 Text("Аккаунты", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp))
+                                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp))
                                 SettingsEntry("👤", Color(0xFF229ED9), "Аккаунт",
                                     "Номер, имя пользователя, «О себе»", "Аккаунт", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("💬", Color(0xFFFF9F0A), "Настройки чатов",
@@ -762,8 +781,8 @@ private fun ProfileSettingsScreen(
                                     "Подарки пользователям LosGram", "Отправить подарок", expandedSetting) { expandedSetting = it }
 
                                 Spacer(Modifier.height(22.dp))
-                                Text("Помощь", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+                                Text("Помощь", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
                                 SettingsEntry("•••", Color(0xFFFF9F0A), "Задать вопрос",
                                     "Связаться с командой LosGram", "Задать вопрос", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("?", Color(0xFF229ED9), "Вопросы о LosGram",
