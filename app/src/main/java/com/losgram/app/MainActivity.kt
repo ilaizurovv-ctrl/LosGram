@@ -743,7 +743,7 @@ private fun ProfileSettingsScreen(
                                             color = Muted, fontSize = 13.sp)
                                     }
                                     Text("›", color = Muted, fontSize = 26.sp,
-                                        modifier = Modifier.clickable { onBack(); }.padding(horizontal = 6.dp))
+                                        modifier = Modifier.padding(horizontal = 6.dp))
                                 }
                                 Text("Аккаунты", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp))
