@@ -157,6 +157,18 @@ class NFTListing(Base):
     sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class NFTReview(Base):
+    __tablename__ = "nft_reviews"
+    __table_args__ = (UniqueConstraint("listing_id", "buyer_id", name="uq_nft_review_listing_buyer"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("nft_listings.id"), index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    buyer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Bot(Base):
     __tablename__ = "bots"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -346,6 +358,12 @@ class AdminGiftGrantRequest(BaseModel):
 
 class NFTListingCreateRequest(BaseModel):
     price: int = Field(ge=1, le=10000000)
+
+
+class NFTReviewRequest(BaseModel):
+    listing_id: int
+    rating: int = Field(ge=1, le=5)
+    comment: str = Field(default="", max_length=500)
 
 
 class AdminGrantRequest(BaseModel):
@@ -963,6 +981,92 @@ def buy_nft_listing(listing_id: int, db: Session = Depends(get_db),
             "name": gift.name, "number": gift.number, "price": price,
             "buyer_balance": locked_buyer.stars_balance,
             "seller_balance": seller.stars_balance, "status": "sold"}
+
+
+@app.get("/market/history")
+def nft_market_history(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    rows = db.execute(
+        select(NFTListing, CollectibleGift, User)
+        .join(CollectibleGift, CollectibleGift.id == NFTListing.gift_id)
+        .join(User, User.id == func.coalesce(
+            func.nullif(NFTListing.buyer_id, 0), NFTListing.seller_id
+        ))
+        .where(or_(NFTListing.seller_id == user.id, NFTListing.buyer_id == user.id))
+        .order_by(NFTListing.sold_at.desc().nullslast(), NFTListing.created_at.desc())
+        .limit(200)
+    ).all()
+    items = []
+    for listing, gift, _ in rows:
+        counterparty_id = listing.seller_id if listing.buyer_id == user.id else listing.buyer_id
+        counterparty = db.get(User, counterparty_id) if counterparty_id else None
+        review = db.scalar(select(NFTReview).where(
+            NFTReview.listing_id == listing.id, NFTReview.buyer_id == user.id
+        ))
+        items.append({
+            "listing_id": listing.id, "gift_id": gift.id, "name": gift.name,
+            "number": gift.number, "price": listing.price, "status": listing.status,
+            "role": "buy" if listing.buyer_id == user.id else "sell",
+            "counterparty_id": counterparty.id if counterparty else None,
+            "counterparty_name": counterparty.display_name if counterparty else "—",
+            "sold_at": listing.sold_at.isoformat() if listing.sold_at else None,
+            "created_at": listing.created_at.isoformat(),
+            "can_review": listing.status == "sold" and listing.buyer_id == user.id and review is None,
+        })
+    return {"items": items}
+
+
+@app.get("/market/users/{user_id}")
+def nft_seller_profile(user_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    seller = db.get(User, user_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    stats = db.execute(
+        select(func.count(NFTListing.id), func.coalesce(func.sum(NFTListing.price), 0))
+        .where(NFTListing.seller_id == user_id, NFTListing.status == "sold")
+    ).one()
+    ratings = db.execute(
+        select(func.count(NFTReview.id), func.coalesce(func.avg(NFTReview.rating), 0))
+        .where(NFTReview.seller_id == user_id)
+    ).one()
+    reviews = db.execute(
+        select(NFTReview, User).join(User, User.id == NFTReview.buyer_id)
+        .where(NFTReview.seller_id == user_id)
+        .order_by(NFTReview.created_at.desc()).limit(50)
+    ).all()
+    return {
+        "user_id": seller.id, "display_name": seller.display_name,
+        "username": seller.username, "bio": seller.bio,
+        "sales_count": int(stats[0] or 0), "stars_earned": int(stats[1] or 0),
+        "rating": round(float(ratings[1] or 0), 2), "reviews_count": int(ratings[0] or 0),
+        "reviews": [{
+            "rating": review.rating, "comment": review.comment,
+            "buyer_name": buyer.display_name, "created_at": review.created_at.isoformat()
+        } for review, buyer in reviews]
+    }
+
+
+@app.post("/market/reviews")
+def create_nft_review(payload: NFTReviewRequest, db: Session = Depends(get_db), buyer: User = Depends(current_user)):
+    listing = db.scalar(select(NFTListing).where(
+        NFTListing.id == payload.listing_id,
+        NFTListing.status == "sold",
+        NFTListing.buyer_id == buyer.id
+    ))
+    if not listing:
+        raise HTTPException(status_code=403, detail="Отзыв доступен только после покупки")
+    if listing.seller_id == buyer.id:
+        raise HTTPException(status_code=400, detail="Нельзя оценить собственную сделку")
+    review = NFTReview(
+        listing_id=listing.id, seller_id=listing.seller_id, buyer_id=buyer.id,
+        rating=payload.rating, comment=payload.comment.strip()
+    )
+    db.add(review)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Вы уже оставили отзыв по этой покупке")
+    return {"ok": True, "review_id": review.id}
 
 
 @app.get("/me/gifts")
