@@ -1486,8 +1486,12 @@ private fun OwnerPanel(session: LoginSession) {
     var query by remember { mutableStateOf("") }
     var users by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
-    var stars by remember { mutableStateOf("0") }
-    var premiumDays by remember { mutableStateOf("0") }
+    var starsAmount by remember { mutableStateOf("") }
+    var nftName by remember { mutableStateOf("") }
+    var nftModel by remember { mutableStateOf("") }
+    var nftBackground by remember { mutableStateOf("") }
+    var nftPattern by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("none") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -1497,6 +1501,10 @@ private fun OwnerPanel(session: LoginSession) {
         checked = true
     }
     if (!checked || !isAdmin) return
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Color(0xFF8B6BC8), unfocusedBorderColor = Navy,
+        focusedTextColor = White, unfocusedTextColor = White,
+        focusedContainerColor = Navy, unfocusedContainerColor = Navy)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF3A315B)), contentAlignment = Alignment.Center) {
@@ -1505,16 +1513,16 @@ private fun OwnerPanel(session: LoginSession) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Панель владельца", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Text("Управление аккаунтами LosGram", color = Muted, fontSize = 12.sp)
+                Text("Выдача звёзд и NFT-подарков", color = Muted, fontSize = 12.sp)
             }
             Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(16.dp))
-        Text("ПОЛЬЗОВАТЕЛИ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("ПОИСК ПОЛЬЗОВАТЕЛЯ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text("Поиск по имени или @username") },
+            placeholder = { Text("LosGram ID, имя или @username") },
             trailingIcon = {
-                Text("⌕", color = Color(0xFFC5A6FF), fontSize = 23.sp,
+                Text("НАЙТИ", color = Color(0xFFC5A6FF), fontSize = 12.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable {
                         scope.launch {
                             busy = true
@@ -1522,71 +1530,113 @@ private fun OwnerPanel(session: LoginSession) {
                                 val arr = api("/admin/users?q=" + Uri.encode(query.trim()), session.token).optJSONArray("items") ?: JSONArray()
                                 users = (0 until arr.length()).map { arr.getJSONObject(it) }
                                 selected = null
-                                status = ""
+                                mode = "none"
+                                status = if (users.isEmpty()) "Пользователь не найден" else ""
                             } catch (e: Exception) { status = e.message ?: "Ошибка поиска" }
                             finally { busy = false }
                         }
-                    }.padding(horizontal = 12.dp))
-            },
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8),
-                unfocusedBorderColor = Navy, focusedTextColor = White, unfocusedTextColor = White,
-                focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+                    }.padding(horizontal = 10.dp))
+            }, colors = fieldColors)
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Color(0xFF8B6BC8))
         users.forEach { user ->
             val name = user.optString("display_name", "Пользователь")
+            val active = selected?.optInt("id") == user.optInt("id")
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .background(if (selected?.optInt("id") == user.optInt("id")) Color(0xFF393047) else Navy)
-                .clickable { selected = user }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                .background(if (active) Color(0xFF393047) else Navy)
+                .clickable { selected = user; mode = "none"; status = "" }
+                .padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).clip(CircleShape).background(Color(0xFF51416D)), contentAlignment = Alignment.Center) {
                     Text(name.take(1).uppercase(), color = White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text(user.optString("username").takeIf { it.isNotBlank() && it != "null" }?.let { "@$it" }
-                        ?: user.optString("virtual_number"), color = Muted, fontSize = 12.sp)
+                    Text("ID \${user.optString("losgram_id")}  ·  " +
+                        (user.optString("username").takeIf { it.isNotBlank() && it != "null" }?.let { "@$it" } ?: user.optString("virtual_number")),
+                        color = Muted, fontSize = 11.sp)
                 }
-                Text("⭐ ${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
+                Text("⭐ \${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
             }
             Spacer(Modifier.height(5.dp))
         }
         selected?.let { user ->
             Divider(color = Navy)
             Spacer(Modifier.height(10.dp))
-            Text("УПРАВЛЕНИЕ АККАУНТОМ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("ВЫДАТЬ ПОЛЬЗОВАТЕЛЮ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(user.optString("display_name"), color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            OutlinedTextField(stars, { stars = it.filter { c -> c == '-' || c.isDigit() }.take(7) },
-                Modifier.fillMaxWidth(), label = { Text("Изменение звёзд (+ / −)") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8), focusedTextColor = White, unfocusedTextColor = White))
-            OutlinedTextField(premiumDays, { premiumDays = it.filter { c -> c == '-' || c.isDigit() }.take(5) },
-                Modifier.fillMaxWidth(), label = { Text("Дни Premium (+ / −)") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF8B6BC8), focusedTextColor = White, unfocusedTextColor = White))
-            Button(onClick = {
-                scope.launch {
-                    busy = true
-                    try {
-                        val result = api("/admin/grant", session.token, "POST",
-                            JSONObject().put("user_id", user.optInt("id"))
-                                .put("stars_delta", stars.toIntOrNull() ?: 0)
-                                .put("premium_days", premiumDays.toIntOrNull() ?: 0))
-                        user.put("stars_balance", result.optInt("stars_balance"))
-                        users = users.toList()
-                        stars = "0"; premiumDays = "0"
-                        status = "Изменения применены"
-                    } catch (e: Exception) { status = e.message ?: "Не удалось применить изменения" }
-                    finally { busy = false }
+            Text("Баланс: ⭐ \${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 13.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { mode = if (mode == "stars") "none" else "stars"; status = "" },
+                    modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF70549B))) {
+                    Text("Выдать звёзды", color = White)
                 }
-            }, enabled = !busy && ((stars.toIntOrNull() ?: 0) != 0 || (premiumDays.toIntOrNull() ?: 0) != 0),
-                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF70549B))) {
-                Text(if (busy) "Обрабатываем..." else "Применить изменения", color = Color.White)
+                Button(onClick = { mode = if (mode == "nft") "none" else "nft"; status = "" },
+                    modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF356C83))) {
+                    Text("Выдать NFT", color = White)
+                }
+            }
+            if (mode == "stars") {
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(starsAmount, { starsAmount = it.filter(Char::isDigit).take(7) },
+                    Modifier.fillMaxWidth(), singleLine = true, label = { Text("Сумма звёзд") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = fieldColors)
+                Button(onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val amount = starsAmount.toInt()
+                            require(amount > 0) { "Введите сумму больше нуля" }
+                            val result = api("/admin/grant", session.token, "POST",
+                                JSONObject().put("user_id", user.optInt("id")).put("stars_delta", amount).put("premium_days", 0))
+                            user.put("stars_balance", result.optInt("stars_balance"))
+                            users = users.toList()
+                            starsAmount = ""
+                            status = "Зачислено $amount ⭐. Новый баланс: \${result.optInt("stars_balance")} ⭐"
+                        } catch (e: Exception) { status = e.message ?: "Не удалось пополнить баланс" }
+                        finally { busy = false }
+                    }
+                }, enabled = !busy && (starsAmount.toIntOrNull() ?: 0) > 0,
+                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF70549B))) {
+                    Text(if (busy) "Пополняем..." else "Пополнить ⭐", color = White)
+                }
+            }
+            if (mode == "nft") {
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(nftName, { nftName = it.take(80) }, Modifier.fillMaxWidth(),
+                    singleLine = true, label = { Text("Название NFT") }, colors = fieldColors)
+                OutlinedTextField(nftModel, { nftModel = it.take(80) }, Modifier.fillMaxWidth(),
+                    singleLine = true, label = { Text("Модель") }, colors = fieldColors)
+                OutlinedTextField(nftBackground, { nftBackground = it.take(80) }, Modifier.fillMaxWidth(),
+                    singleLine = true, label = { Text("Фон") }, colors = fieldColors)
+                OutlinedTextField(nftPattern, { nftPattern = it.take(80) }, Modifier.fillMaxWidth(),
+                    singleLine = true, label = { Text("Узор") }, colors = fieldColors)
+                Text("Номер NFT будет присвоен автоматически после выдачи.", color = Muted, fontSize = 12.sp)
+                Button(onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val result = api("/admin/gifts/grant", session.token, "POST",
+                                JSONObject().put("user_id", user.optInt("id")).put("name", nftName.trim())
+                                    .put("model", nftModel.trim()).put("background", nftBackground.trim())
+                                    .put("pattern", nftPattern.trim()))
+                            status = "NFT «\${result.optString("name")}» выдан. №\${result.optInt("number")}"
+                            nftName = ""; nftModel = ""; nftBackground = ""; nftPattern = ""
+                            mode = "none"
+                        } catch (e: Exception) { status = e.message ?: "Не удалось выдать NFT" }
+                        finally { busy = false }
+                    }
+                }, enabled = !busy && nftName.isNotBlank() && nftModel.isNotBlank() &&
+                    nftBackground.isNotBlank() && nftPattern.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF356C83))) {
+                    Text(if (busy) "Выдаём..." else "Выдать NFT", color = White)
+                }
             }
         }
-        if (status.isNotBlank()) Text(status, color = if (status == "Изменения применены") Color(0xFF9BD18B) else Color(0xFFFF8888), fontSize = 12.sp)
+        if (status.isNotBlank()) Text(status, color = if (status.contains("Зачислено") || status.contains("выдан")) Color(0xFF9BD18B) else Color(0xFFFF8888),
+            fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
-
 @Composable
 private fun PreferenceSwitch(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
