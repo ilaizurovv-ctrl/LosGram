@@ -447,6 +447,9 @@ class ConnectionHub:
 
 hub = ConnectionHub()
 
+# Ephemeral typing indicators; timestamps expire automatically.
+typing_presence: dict[tuple[int, int], datetime] = {}
+
 
 
 def telegram_code_hash(telegram_user_id: str, code: str) -> str:
@@ -1159,6 +1162,28 @@ def list_messages(conversation_id: int, before_id: int | None = None, limit: int
                                      ).limit(1)) is not None}
                                     for emoji, count in reaction_rows]})
     return {"items": items}
+
+
+@app.post("/conversations/{conversation_id}/typing")
+def set_typing(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    typing_presence[(conversation_id, user.id)] = datetime.now(timezone.utc)
+    return {"ok": True}
+
+
+@app.get("/conversations/{conversation_id}/typing")
+def get_typing(conversation_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    now = datetime.now(timezone.utc)
+    active = []
+    for (conv_id, user_id), seen_at in list(typing_presence.items()):
+        if (now - seen_at).total_seconds() > 4:
+            typing_presence.pop((conv_id, user_id), None)
+        elif conv_id == conversation_id and user_id != user.id:
+            active.append(user_id)
+    return {"typing": bool(active)}
 
 
 @app.post("/conversations/{conversation_id}/messages")
