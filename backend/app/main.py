@@ -740,6 +740,74 @@ def admin_grant_gift(payload: AdminGiftGrantRequest, db: Session = Depends(get_d
             "model": gift.model, "background": gift.background, "pattern": gift.pattern}
 
 
+@app.post("/admin/diagnostics/gifts")
+def diagnose_collectible_gifts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Perform a real, temporary PostgreSQL write/read/delete round-trip as the owner."""
+    from sqlalchemy import inspect as sqlalchemy_inspect
+
+    required_columns = {"id", "user_id", "name", "model", "background", "pattern", "number", "created_at"}
+    try:
+        if not sqlalchemy_inspect(engine).has_table("collectible_gifts"):
+            raise HTTPException(status_code=503, detail="Таблица collectible_gifts отсутствует")
+        actual_columns = {column["name"] for column in sqlalchemy_inspect(engine).get_columns("collectible_gifts")}
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise HTTPException(status_code=503, detail=f"В таблице NFT отсутствуют поля: {', '.join(missing_columns)}")
+
+        last_number = db.scalar(select(func.max(CollectibleGift.number))) or 0
+        marker = secrets.token_hex(6)
+        gift = CollectibleGift(
+            user_id=admin.id,
+            name=f"LosGram DB check {marker}",
+            model="Diagnostic",
+            background="Diagnostic",
+            pattern="Temporary",
+            number=last_number + 1,
+        )
+        db.add(gift)
+        db.commit()
+        db.refresh(gift)
+        gift_id = gift.id
+        gift_number = gift.number
+
+        persisted = db.scalar(select(CollectibleGift).where(
+            CollectibleGift.id == gift_id,
+            CollectibleGift.user_id == admin.id,
+            CollectibleGift.name == f"LosGram DB check {marker}",
+        ))
+        if persisted is None:
+            raise RuntimeError("Committed NFT row could not be read back")
+
+        # Exercise the same query shape as /me/gifts, then remove only this diagnostic row.
+        visible = db.scalars(select(CollectibleGift).where(
+            CollectibleGift.user_id == admin.id,
+            CollectibleGift.id == gift_id,
+        )).all()
+        if len(visible) != 1 or visible[0].number != gift_number:
+            raise RuntimeError("NFT collection query did not return the persisted row")
+
+        db.delete(persisted)
+        db.commit()
+        return {
+            "ok": True,
+            "table": "collectible_gifts",
+            "schema_ok": True,
+            "write_ok": True,
+            "read_back_ok": True,
+            "collection_query_ok": True,
+            "cleanup_ok": True,
+            "test_record_id": gift_id,
+            "test_number": gift_number,
+            "message": "Тестовая NFT-запись сохранена, прочитана и удалена. Реальные подарки не затронуты.",
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Проверка NFT не пройдена: {type(exc).__name__}") from exc
+
+
 @app.get("/me/gifts")
 def my_collectible_gifts(db: Session = Depends(get_db), user: User = Depends(current_user)):
     gifts = db.scalars(select(CollectibleGift).where(
