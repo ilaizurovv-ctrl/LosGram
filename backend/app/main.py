@@ -372,6 +372,11 @@ class NFTListingCreateRequest(BaseModel):
     price: int = Field(ge=1, le=10000000)
 
 
+class AdminTelegramGiftPublishRequest(BaseModel):
+    price: int = Field(ge=1, le=10000000)
+    quantity: int = Field(default=1, ge=1, le=100)
+
+
 class NFTReviewRequest(BaseModel):
     listing_id: int
     rating: int = Field(ge=1, le=5)
@@ -830,6 +835,51 @@ def admin_telegram_gifts(admin: User = Depends(require_admin)):
         })
     return {"items": items, "source": "Telegram Bot API getAvailableGifts",
             "note": "Это доступные базовые подарки Telegram. Полный список collectible NFT-вариантов Telegram через Bot API не предоставляется."}
+
+
+@app.post("/admin/telegram/gifts/{gift_id}/publish")
+def admin_publish_telegram_gift(gift_id: str, payload: AdminTelegramGiftPublishRequest,
+                                db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Mint base, unupgraded LosGram NFT copies from a Telegram base gift and list them."""
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Не задан TELEGRAM_BOT_TOKEN в Render")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getAvailableGifts",
+        headers={"User-Agent": "LosGram/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            telegram_payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось проверить подарок Telegram: {type(exc).__name__}")
+    gift_data = next((x for x in telegram_payload.get("result", {}).get("gifts", [])
+                      if str(x.get("id")) == gift_id), None)
+    if not telegram_payload.get("ok") or gift_data is None:
+        raise HTTPException(status_code=404, detail="Базовый подарок Telegram не найден или больше недоступен")
+    sticker = gift_data.get("sticker") or {}
+    name = (sticker.get("set_name") or sticker.get("emoji") or "Подарок Telegram")[:80]
+    last_number = db.scalar(select(func.max(CollectibleGift.number))) or 0
+    created = []
+    try:
+        for index in range(payload.quantity):
+            collectible = CollectibleGift(
+                user_id=admin.id, name=name,
+                model="Не улучшен", background="Не улучшен", pattern="Не улучшен",
+                number=last_number + index + 1,
+            )
+            db.add(collectible)
+            db.flush()
+            listing = NFTListing(gift_id=collectible.id, seller_id=admin.id,
+                                 price=payload.price, status="active")
+            db.add(listing)
+            created.append({"gift_id": collectible.id, "listing_id": listing.id,
+                            "number": collectible.number, "price": payload.price})
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Не удалось выставить базовые NFT на маркетплейс")
+    return {"ok": True, "created": len(created), "items": created,
+            "message": f"Выставлено базовых NFT: {len(created)}. Улучшения не применялись."}
 
 
 @app.get("/admin/telegram/gifts/{gift_id}/image")
