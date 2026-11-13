@@ -140,6 +140,26 @@ with engine.begin() as connection:
         connection.exec_driver_sql(
             f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_{_column} ON users ({_column})"
         )
+    # Upgrade legacy messages tables created before conversations were introduced.
+    _message_columns = {column["name"] for column in inspect(engine).get_columns("messages")}
+    if "conversation_id" not in _message_columns:
+        _global_id = connection.exec_driver_sql(
+            "SELECT id FROM conversations WHERE kind = 'global' ORDER BY id LIMIT 1"
+        ).scalar()
+        if _global_id is None:
+            _global_id = connection.exec_driver_sql(
+                "INSERT INTO conversations (kind, title, created_at) VALUES ('global', 'LosGram', NOW()) RETURNING id"
+            ).scalar()
+        connection.exec_driver_sql("ALTER TABLE messages ADD COLUMN conversation_id INTEGER")
+        connection.exec_driver_sql(
+            "UPDATE messages SET conversation_id = %s WHERE conversation_id IS NULL" % int(_global_id)
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE messages ALTER COLUMN conversation_id SET NOT NULL"
+        )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_messages_conversation_id ON messages (conversation_id)"
+    )
 
 
 def get_db():
