@@ -1164,10 +1164,14 @@ def list_messages(conversation_id: int, before_id: int | None = None, limit: int
             .where(MessageReaction.message_id == x.id)
             .group_by(MessageReaction.emoji)
         ).all()
+        attachment = db.scalar(select(MessageAttachment).where(MessageAttachment.message_id == x.id))
         items.append({"id": x.id, "conversation_id": x.conversation_id, "sender_id": x.sender_id,
                       "body": ("Сообщение удалено" if x.deleted_at else x.body),
                       "created_at": x.created_at.isoformat(), "reply_to_id": x.reply_to_id,
                       "edited": x.edited_at is not None, "deleted": x.deleted_at is not None,
+                      "attachment": ({"id": attachment.id, "file_name": attachment.file_name,
+                                      "mime_type": attachment.mime_type, "size": attachment.size}
+                                     if attachment and not x.deleted_at else None),
                       "reactions": [{"emoji": emoji, "count": count,
                                      "mine": db.scalar(select(MessageReaction.id).where(
                                          MessageReaction.message_id == x.id,
