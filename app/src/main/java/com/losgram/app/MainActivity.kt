@@ -1094,6 +1094,23 @@ private fun LosGramMarketScreen(onBack: () -> Unit, balance: Int = 0) {
                 Spacer(Modifier.height(28.dp))
                 Box(Modifier.clip(RoundedCornerShape(28.dp)).background(Color(0xFF242424)).padding(horizontal = 24.dp, vertical = 10.dp)) { Text("Все", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                 Spacer(Modifier.height(26.dp))
+                Text("Коллекционные подарки", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
+                val collectibles = listOf("Neon Cat" to "🐱", "Golden Ghost" to "👻", "Pixel Dragon" to "🐉", "Royal Crown" to "👑")
+                collectibles.chunked(2).forEach { rowItems ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowItems.forEach { item ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Color(0xFF151515)).padding(vertical = 14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(item.second, fontSize = 62.sp)
+                                Spacer(Modifier.height(8.dp))
+                                Text(item.first, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text("NFT-подарок", color = Muted, fontSize = 12.sp)
+                            }
+                        }
+                        repeat(2 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 gifts.chunked(3).forEach { rowGifts ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         rowGifts.forEach { gift ->
