@@ -102,6 +102,9 @@ class Message(Base):
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), index=True)
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     body: Mapped[str] = mapped_column(Text)
+    reply_to_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id"), nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -155,6 +158,9 @@ with engine.begin() as connection:
         )
     # Upgrade legacy messages tables created before conversations were introduced.
     _message_columns = {column["name"] for column in inspect(engine).get_columns("messages")}
+    for _column, _sql_type in {"reply_to_id": "INTEGER", "edited_at": "TIMESTAMP WITH TIME ZONE", "deleted_at": "TIMESTAMP WITH TIME ZONE"}.items():
+        if _column not in _message_columns:
+            connection.exec_driver_sql(f"ALTER TABLE messages ADD COLUMN {_column} {_sql_type}")
     # Legacy messages.created_at was stored as BIGINT; the ORM now uses timestamptz.
     _message_created_at = next((c for c in inspect(engine).get_columns("messages") if c["name"] == "created_at"), None)
     if _message_created_at and isinstance(_message_created_at["type"], BigInteger):
@@ -270,6 +276,11 @@ class DirectConversationRequest(BaseModel):
 
 
 class MessageRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=10000)
+    reply_to_id: int | None = None
+
+
+class MessageEditRequest(BaseModel):
     body: str = Field(min_length=1, max_length=10000)
 
 
