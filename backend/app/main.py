@@ -142,6 +142,19 @@ with engine.begin() as connection:
         )
     # Upgrade legacy messages tables created before conversations were introduced.
     _message_columns = {column["name"] for column in inspect(engine).get_columns("messages")}
+    # Legacy messages.created_at was stored as BIGINT; the ORM now uses timestamptz.
+    _message_created_at = next((c for c in inspect(engine).get_columns("messages") if c["name"] == "created_at"), None)
+    if _message_created_at and isinstance(_message_created_at["type"], BigInteger):
+        connection.exec_driver_sql("""
+            ALTER TABLE messages
+            ALTER COLUMN created_at TYPE TIMESTAMP WITH TIME ZONE
+            USING CASE
+                WHEN created_at IS NULL THEN NOW()
+                WHEN ABS(created_at) >= 100000000000
+                    THEN to_timestamp(created_at / 1000.0)
+                ELSE to_timestamp(created_at)
+            END
+        """)
     if "conversation_id" not in _message_columns:
         _global_id = connection.exec_driver_sql(
             "SELECT id FROM conversations WHERE kind = 'global' ORDER BY id LIMIT 1"
