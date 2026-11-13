@@ -318,6 +318,10 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
         }
     }
 
+    if (selectedTab == 4) {
+        LosGramMarketScreen(onBack = { selectedTab = 0 })
+        return
+    }
     if (selectedTab == 1) {
         ContactsScreen(
             session = session,
@@ -333,7 +337,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
     if (selectedTab == 2 || selectedTab == 3) {
         ProfileSettingsScreen(
             session = session,
-            showProfile = selectedTab == 3,
+            showProfile = selectedTab == 4,
             onBack = { selectedTab = 0 },
             onOpenSettings = { selectedTab = 2 },
             onLogout = onLogout
@@ -477,8 +481,8 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
                     .padding(horizontal = 6.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val labels = listOf("Чаты", "Контакты", "Настройки", "Профиль")
-                val icons = listOf("●", "☻", "⚙", "◉")
+                val labels = listOf("Чаты", "Контакты", "Маркет", "Настройки", "Профиль")
+                val icons = listOf("●", "☻", "◆", "⚙", "◉")
                 labels.forEachIndexed { index, label ->
                     Column(
                         Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(38.dp))
@@ -1062,6 +1066,85 @@ private fun ProfileSettingsScreen(
     }
 }
 
+
+@Composable
+
+private data class MarketItem(val id: Int, val title: String, val subtitle: String, val price: Int, val emoji: String, val rarity: String, val nft: Boolean)
+
+@Composable
+private fun LosGramMarketScreen(onBack: () -> Unit) {
+    var category by remember { mutableIntStateOf(0) }
+    var selected by remember { mutableStateOf<MarketItem?>(null) }
+    var notice by remember { mutableStateOf("") }
+    val gifts = listOf(
+        MarketItem(1, "Золотая роза", "Подарок для особенного человека", 100, "🌹", "Редкий", false),
+        MarketItem(2, "Кристальное сердце", "Тёплый знак внимания", 250, "💎", "Эпический", false),
+        MarketItem(3, "Космический мишка", "Коллекционный подарок", 500, "🧸", "Легендарный", false),
+        MarketItem(4, "Королевская корона", "Подарок с королевским стилем", 750, "👑", "Легендарный", false)
+    )
+    val nfts = listOf(
+        MarketItem(5, "Neon Cat #001", "LosGram Genesis · 1 из 1000", 1200, "🐈", "Обычный", true),
+        MarketItem(6, "Golden Ghost #007", "Digital Spirits · 7 из 100", 4500, "👻", "Редкий", true),
+        MarketItem(7, "Pixel Dragon #021", "Mythic Creatures · 21 из 50", 9000, "🐉", "Эпический", true),
+        MarketItem(8, "Royal Crown #001", "LosGram Legends · 1 из 10", 25000, "👑", "Легендарный", true)
+    )
+    val items = if (category == 0) gifts else nfts
+    Surface(Modifier.fillMaxSize(), color = Navy) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 34.sp, modifier = Modifier.clickable { onBack() }.padding(end = 14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("LosGram Market", color = White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("Подарки и цифровые коллекции", color = Muted, fontSize = 12.sp)
+                }
+                Text("★", color = Color(0xFFFFC94A), fontSize = 25.sp)
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).clip(RoundedCornerShape(24.dp)).background(Panel).padding(4.dp)) {
+                listOf("🎁 Подарки", "💠 NFT").forEachIndexed { i, label ->
+                    Box(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (category == i) Color(0xFF3B4654) else Color.Transparent)
+                        .clickable { category = i }.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
+                        Text(label, color = White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (category == 0) "Популярные подарки" else "NFT-коллекции", color = White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Все", color = Blue, fontSize = 13.sp)
+            }
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(items.chunked(2)) { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        pair.forEach { item ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(Panel).clickable { selected = item }.padding(12.dp)) {
+                                Box(Modifier.fillMaxWidth().height(118.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF202A38)), contentAlignment = Alignment.Center) {
+                                    Text(item.emoji, fontSize = 58.sp)
+                                    Text(item.rarity.uppercase(), color = Color(0xFFFFD36A), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart).padding(8.dp))
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Text(item.title, color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(item.subtitle, color = Muted, fontSize = 11.sp, maxLines = 2, minLines = 2)
+                                Spacer(Modifier.height(8.dp))
+                                Text("★  ${item.price}", color = Color(0xFFFFD36A), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+    selected?.let { item ->
+        AlertDialog(onDismissRequest = { selected = null }, title = { Text(item.title) },
+            text = { Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(item.emoji, fontSize = 64.sp); Text(item.subtitle); Text("Редкость: ${item.rarity}")
+                Text("Цена: ★ ${item.price}")
+                Text(if (item.nft) "NFT: коллекционный цифровой предмет" else "Подарок можно будет отправить пользователю LosGram")
+            } },
+            confirmButton = { TextButton(onClick = { notice = "Покупки и списание звёзд подключим после создания серверного каталога и безопасных транзакций."; selected = null }) { Text("Подробнее") } },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("Закрыть") } })
+    }
+    if (notice.isNotBlank()) AlertDialog(onDismissRequest = { notice = "" }, text = { Text(notice) }, confirmButton = { TextButton(onClick = { notice = "" }) { Text("Понятно") } })
+}
 
 @Composable
 private fun StarsWalletScreen(balance: Int, onBack: () -> Unit) {
