@@ -1,0 +1,4 @@
+[submodule "upstream/ShuzaGram"]
+	path = upstream/ShuzaGram
+	url = https://github.com/shuzq-sh/shuzagram-mod.git
+	branch = main
