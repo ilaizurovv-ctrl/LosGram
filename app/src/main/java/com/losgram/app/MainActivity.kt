@@ -1521,6 +1521,7 @@ private fun OwnerPanel(session: LoginSession) {
     var mode by remember { mutableStateOf("none") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var diagnosticsStatus by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.token) {
         try { isAdmin = api("/admin/users?q=", session.token).optJSONArray("items") != null }
@@ -1544,7 +1545,34 @@ private fun OwnerPanel(session: LoginSession) {
             }
             Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = {
+            scope.launch {
+                busy = true
+                diagnosticsStatus = ""
+                try {
+                    val result = api("/admin/diagnostics/gifts", session.token, "POST", JSONObject())
+                    val checks = listOf(
+                        "Схема" to result.optBoolean("schema_ok"),
+                        "Запись" to result.optBoolean("write_ok"),
+                        "Чтение" to result.optBoolean("read_back_ok"),
+                        "Коллекция" to result.optBoolean("collection_query_ok"),
+                        "Очистка" to result.optBoolean("cleanup_ok")
+                    )
+                    diagnosticsStatus = checks.joinToString(" · ") { (name, ok) -> "$name: ${if (ok) "OK" else "ОШИБКА"}" }
+                } catch (e: Exception) {
+                    diagnosticsStatus = e.message ?: "Диагностика не выполнена"
+                } finally { busy = false }
+            }
+        }, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF356C83))) {
+            Text(if (busy) "Проверяем NFT..." else "Проверить NFT-хранилище", color = White)
+        }
+        if (diagnosticsStatus.isNotBlank()) {
+            Text(diagnosticsStatus, color = if (diagnosticsStatus.contains("ОШИБКА") || diagnosticsStatus.contains("не выполнена")) Color(0xFFFF8888) else Color(0xFF9BD18B),
+                fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        Spacer(Modifier.height(8.dp))
         Text("ПОИСК ПОЛЬЗОВАТЕЛЯ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
             placeholder = { Text("LosGram ID, имя или @username") },
