@@ -572,7 +572,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
     val context = LocalContext.current
 
     suspend fun reload() {
-        val response = api("/conversations/\${chat.id}/messages", session.token)
+        val response = api("/conversations/${chat.id}/messages", session.token)
         val arr = response.optJSONArray("items") ?: JSONArray()
         messages = (0 until arr.length()).map {
             val item = arr.getJSONObject(it)
@@ -605,12 +605,12 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
             try {
                 val target = editing
                 if (target != null) {
-                    api("/conversations/\${chat.id}/messages/\${target.id}", session.token, "PATCH",
+                    api("/conversations/${chat.id}/messages/${target.id}", session.token, "PATCH",
                         JSONObject().put("body", text))
                 } else {
                     val body = JSONObject().put("body", text)
                     replyTo?.let { body.put("reply_to_id", it.id) }
-                    api("/conversations/\${chat.id}/messages", session.token, "POST", body)
+                    api("/conversations/${chat.id}/messages", session.token, "POST", body)
                 }
                 draft = ""
                 replyTo = null
@@ -703,7 +703,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                         selectedMessage = null
                         scope.launch {
                             try {
-                                api("/conversations/\${chat.id}/messages/\${message.id}/forward-to-saved", session.token, "POST", JSONObject())
+                                api("/conversations/${chat.id}/messages/${message.id}/forward-to-saved", session.token, "POST", JSONObject())
                                 error = "Переслано в Избранное"
                                 reload()
                             } catch (e: Exception) { error = e.message ?: "Не удалось переслать сообщение" }
@@ -715,7 +715,7 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                             selectedMessage = null
                             scope.launch {
                                 try {
-                                    api("/conversations/\${chat.id}/messages/\${message.id}", session.token, "DELETE")
+                                    api("/conversations/${chat.id}/messages/${message.id}", session.token, "DELETE")
                                     reload()
                                 } catch (e: Exception) { error = e.message ?: "Не удалось удалить сообщение" }
                             }
@@ -1574,11 +1574,11 @@ private fun OwnerPanel(session: LoginSession) {
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(name, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text("ID \${user.optString("losgram_id")}  ·  " +
+                    Text("ID ${user.optString("losgram_id")}  ·  " +
                         (user.optString("username").takeIf { it.isNotBlank() && it != "null" }?.let { "@$it" } ?: user.optString("virtual_number")),
                         color = Muted, fontSize = 11.sp)
                 }
-                Text("⭐ \${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
+                Text("⭐ ${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
             }
             Spacer(Modifier.height(5.dp))
         }
@@ -1587,7 +1587,7 @@ private fun OwnerPanel(session: LoginSession) {
             Spacer(Modifier.height(10.dp))
             Text("ВЫДАТЬ ПОЛЬЗОВАТЕЛЮ", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(user.optString("display_name"), color = White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text("Баланс: ⭐ \${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 13.sp)
+            Text("Баланс: ⭐ ${user.optInt("stars_balance")}", color = Color(0xFFFFD76A), fontSize = 13.sp)
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { mode = if (mode == "stars") "none" else "stars"; status = "" },
@@ -1615,7 +1615,7 @@ private fun OwnerPanel(session: LoginSession) {
                             user.put("stars_balance", result.optInt("stars_balance"))
                             users = users.toList()
                             starsAmount = ""
-                            status = "Зачислено $amount ⭐. Новый баланс: \${result.optInt("stars_balance")} ⭐"
+                            status = "Зачислено $amount ⭐. Новый баланс: ${result.optInt("stars_balance")} ⭐"
                         } catch (e: Exception) { status = e.message ?: "Не удалось пополнить баланс" }
                         finally { busy = false }
                     }
@@ -1643,7 +1643,7 @@ private fun OwnerPanel(session: LoginSession) {
                                 JSONObject().put("user_id", user.optInt("id")).put("name", nftName.trim())
                                     .put("model", nftModel.trim()).put("background", nftBackground.trim())
                                     .put("pattern", nftPattern.trim()))
-                            status = "NFT «\${result.optString("name")}» выдан. №\${result.optInt("number")}"
+                            status = "NFT «${result.optString("name")}» выдан. №${result.optInt("number")}"
                             nftName = ""; nftModel = ""; nftBackground = ""; nftPattern = ""
                             mode = "none"
                         } catch (e: Exception) { status = e.message ?: "Не удалось выдать NFT" }
