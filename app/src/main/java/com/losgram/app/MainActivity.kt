@@ -319,7 +319,7 @@ fun MessengerHome(session: LoginSession, onLogout: () -> Unit) {
     }
 
     if (selectedTab == 2) {
-        LosGramMarketScreen(onBack = { selectedTab = 0 })
+        NFTMarketplaceScreen(session, onBack = { selectedTab = 0 })
         return
     }
     if (selectedTab == 1) {
@@ -1139,6 +1139,85 @@ private fun ProfileSettingsScreen(
 }
 
 
+
+
+@Composable
+private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
+    var items by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var busyId by remember { mutableIntStateOf(0) }
+    var selected by remember { mutableStateOf<JSONObject?>(null) }
+    var message by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    suspend fun refresh() {
+        val arr = api("/market/nfts", session.token).optJSONArray("items") ?: JSONArray()
+        items = (0 until arr.length()).map { arr.getJSONObject(it) }
+    }
+    LaunchedEffect(session.token) {
+        try { refresh() } catch (e: Exception) { message = e.message ?: "Не удалось загрузить маркет" }
+        loading = false
+    }
+    Surface(Modifier.fillMaxSize(), color = Color(0xFF0E1621)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().height(62.dp).background(Color(0xFF202B36)).padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = Blue, fontSize = 32.sp, modifier = Modifier.clickable { onBack() }.padding(end = 14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("NFT-маркет", color = White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    Text("Покупка и продажа за ⭐", color = Muted, fontSize = 12.sp)
+                }
+                Text("↻", color = White, fontSize = 24.sp, modifier = Modifier.clickable {
+                    scope.launch { loading = true; try { refresh() } catch (e: Exception) { message = e.message ?: "Ошибка" }; loading = false }
+                })
+            }
+            if (loading) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Blue)
+            } else if (items.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text("Пока нет NFT на продаже. Выставить свой NFT можно в профиле, в разделе «Коллекция подарков».",
+                    color = Muted, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            } else LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(14.dp)) {
+                items(items, key = { it.optInt("listing_id") }) { nft ->
+                    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF202B36)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(76.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF342B47)),
+                            contentAlignment = Alignment.Center) { Text("💎", fontSize = 38.sp) }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(nft.optString("name"), color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("#" + nft.optInt("number") + " · " + nft.optString("model"), color = Muted, fontSize = 12.sp)
+                            Text("Продавец: " + nft.optString("seller_name"), color = Muted, fontSize = 12.sp)
+                            Text("⭐ " + nft.optInt("price"), color = Color(0xFFFFD76A), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            if (nft.optBoolean("is_mine")) Text("Ваше объявление", color = Blue, fontSize = 11.sp)
+                            else Text("Купить", color = White, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(12.dp))
+                                    .background(Blue).clickable { selected = nft }.padding(horizontal = 18.dp, vertical = 8.dp))
+                        }
+                    }
+                }
+            }
+            if (message.isNotBlank()) Text(message, color = Color(0xFFFF7777), modifier = Modifier.padding(12.dp))
+        }
+    }
+    selected?.let { nft ->
+        AlertDialog(onDismissRequest = { if (busyId == 0) selected = null },
+            title = { Text("Купить NFT?") },
+            text = { Text("«" + nft.optString("name") + "» №" + nft.optInt("number") + " за " + nft.optInt("price") + " ⭐. Звёзды будут списаны с вашего баланса, NFT перейдёт в вашу коллекцию, а продавец получит оплату.") },
+            confirmButton = { TextButton(enabled = busyId == 0, onClick = {
+                val id = nft.optInt("listing_id")
+                scope.launch {
+                    busyId = id
+                    try {
+                        val result = api("/market/nfts/" + id + "/buy", session.token, "POST", JSONObject())
+                        message = "Покупка успешна: NFT «" + result.optString("name") + "» добавлен в вашу коллекцию."
+                        selected = null
+                        refresh()
+                    } catch (e: Exception) { message = e.message ?: "Покупка не удалась" }
+                    finally { busyId = 0 }
+                }
+            }) { Text(if (busyId != 0) "Покупаем..." else "Купить за ⭐ " + nft.optInt("price")) } },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("Отмена") } })
+    }
+}
 
 @Composable
 private fun LosGramGiftMarketScreen(recipient: String, onBack: () -> Unit) {
