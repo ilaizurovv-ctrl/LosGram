@@ -862,6 +862,8 @@ private fun SettingsDetail(key: String) {
     var language by remember { mutableStateOf(prefs.getString("language", "Русский") ?: "Русский") }
     var folderMode by remember { mutableStateOf(prefs.getString("folder_mode", "Все чаты") ?: "Все чаты") }
     var helpText by remember { mutableStateOf("") }
+    var actionMessage by remember { mutableStateOf("") }
+    fun openSystemSettings(action: String) { try { context.startActivity(Intent(action).apply { if (action == android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS) putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName) else data = Uri.parse("package:" + context.packageName) }) } catch (_: Exception) { actionMessage = "Не удалось открыть системные настройки" } }
     Column(Modifier.fillMaxWidth().padding(start = 60.dp, end = 8.dp, bottom = 12.dp)
         .clip(RoundedCornerShape(14.dp)).background(Panel).padding(12.dp)) {
         when (key) {
@@ -875,6 +877,9 @@ private fun SettingsDetail(key: String) {
                 }
             }
             "Уведомления" -> {
+                Text("Системные разрешения и каналы уведомлений Android", color = Muted, fontSize = 12.sp)
+                OutlinedButton(onClick = { openSystemSettings(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS) },
+                    modifier = Modifier.fillMaxWidth()) { Text("Настроить уведомления Android") }
                 PreferenceSwitch("Звуки", "Звуки сообщений и действий", sound) {
                     sound = it; prefs.edit().putBoolean("sound_enabled", it).apply()
                 }
@@ -891,8 +896,12 @@ private fun SettingsDetail(key: String) {
                 PreferenceSwitch("Сохранять в галерею", "Сохранять полученные медиафайлы", saveToGallery) {
                     saveToGallery = it; prefs.edit().putBoolean("save_gallery", it).apply()
                 }
-                Text("Очистка кэша станет доступна после подключения локального хранилища медиа.",
+                Text("Кэш приложения: " + android.text.format.Formatter.formatShortFileSize(context, context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }),
                     color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                OutlinedButton(onClick = {
+                    context.cacheDir.deleteRecursively()
+                    actionMessage = "Кэш приложения очищен"
+                }, modifier = Modifier.fillMaxWidth()) { Text("Очистить кэш") }
             }
             "Папки с чатами" -> {
                 Text("Показывать", color = White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -932,8 +941,11 @@ private fun SettingsDetail(key: String) {
                 Text("Выбор сохраняется на устройстве. Полный перевод экранов подключим отдельно.",
                     color = Muted, fontSize = 12.sp)
             }
-            "Устройства" -> Text("Сейчас открыт этот аккаунт на данном устройстве. Управление другими сеансами появится после добавления API сеансов.",
-                color = Muted, fontSize = 13.sp)
+            "Устройства" -> {
+                Text("Управление разрешениями и системными возможностями этого устройства.", color = Muted, fontSize = 13.sp)
+                OutlinedButton(onClick = { openSystemSettings(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS) },
+                    modifier = Modifier.fillMaxWidth()) { Text("Открыть настройки приложения") }
+            }
             "Конфиденциальность" -> Text("Настройки показа номера и времени посещения доступны в разделе редактирования профиля.",
                 color = Muted, fontSize = 13.sp)
             "Аккаунт" -> Text("Изменить имя, username, описание и фото можно во вкладке «Профиль».",
@@ -959,6 +971,7 @@ private fun SettingsDetail(key: String) {
             "Политика конфиденциальности" -> Text("Данные аккаунта используются для работы LosGram. Не передавайте никому код входа.",
                 color = Muted, fontSize = 13.sp)
         }
+        if (actionMessage.isNotBlank()) Text(actionMessage, color = Blue, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
