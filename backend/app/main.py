@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select, or_, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select, or_, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 APP_ENV = os.getenv("APP_ENV", "development")
@@ -107,6 +107,16 @@ class Message(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+
+
+class MessageReaction(Base):
+    __tablename__ = "message_reactions"
+    __table_args__ = (UniqueConstraint("message_id", "user_id", name="uq_message_reaction_user"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    emoji: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class CollectibleGift(Base):
@@ -1130,10 +1140,25 @@ def list_messages(conversation_id: int, before_id: int | None = None, limit: int
         query = query.where(Message.id < before_id)
     rows = db.scalars(query.order_by(Message.id.desc()).limit(min(max(limit, 1), 100))).all()
     rows.reverse()
-    return {"items": [{"id": x.id, "conversation_id": x.conversation_id, "sender_id": x.sender_id,
-                       "body": ("Сообщение удалено" if x.deleted_at else x.body),
-                       "created_at": x.created_at.isoformat(), "reply_to_id": x.reply_to_id,
-                       "edited": x.edited_at is not None, "deleted": x.deleted_at is not None} for x in rows]}
+    items = []
+    for x in rows:
+        reaction_rows = db.execute(
+            select(MessageReaction.emoji, func.count(MessageReaction.id))
+            .where(MessageReaction.message_id == x.id)
+            .group_by(MessageReaction.emoji)
+        ).all()
+        items.append({"id": x.id, "conversation_id": x.conversation_id, "sender_id": x.sender_id,
+                      "body": ("Сообщение удалено" if x.deleted_at else x.body),
+                      "created_at": x.created_at.isoformat(), "reply_to_id": x.reply_to_id,
+                      "edited": x.edited_at is not None, "deleted": x.deleted_at is not None,
+                      "reactions": [{"emoji": emoji, "count": count,
+                                     "mine": db.scalar(select(MessageReaction.id).where(
+                                         MessageReaction.message_id == x.id,
+                                         MessageReaction.user_id == user.id,
+                                         MessageReaction.emoji == emoji
+                                     ).limit(1)) is not None}
+                                    for emoji, count in reaction_rows]})
+    return {"items": items}
 
 
 @app.post("/conversations/{conversation_id}/messages")
@@ -1156,6 +1181,34 @@ async def send_message(conversation_id: int, payload: MessageRequest,
     for member_id in members:
         await hub.send_to_user(member_id, data)
     return data
+
+
+@app.post("/conversations/{conversation_id}/messages/{message_id}/reactions")
+def toggle_message_reaction(conversation_id: int, message_id: int, payload: dict,
+                            db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    message = db.get(Message, message_id)
+    if not message or message.conversation_id != conversation_id or message.deleted_at:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    emoji = str(payload.get("emoji", ""))
+    allowed = {"👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"}
+    if emoji not in allowed:
+        raise HTTPException(status_code=400, detail="Недопустимая реакция")
+    current = db.scalar(select(MessageReaction).where(
+        MessageReaction.message_id == message_id, MessageReaction.user_id == user.id
+    ))
+    if current and current.emoji == emoji:
+        db.delete(current)
+        active = False
+    else:
+        if current:
+            current.emoji = emoji
+        else:
+            db.add(MessageReaction(message_id=message_id, user_id=user.id, emoji=emoji))
+        active = True
+    db.commit()
+    return {"ok": True, "active": active, "emoji": emoji}
 
 
 @app.post("/conversations/{conversation_id}/messages/{message_id}/forward-to-saved")
