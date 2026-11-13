@@ -726,8 +726,8 @@ private fun ProfileSettingsScreen(
                     } else {
                         item {
                             Column(Modifier.fillMaxWidth()) {
-                                Text("Аккаунты", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp))
+                                Text("Аккаунты", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp))
                                 SettingsEntry("👤", Color(0xFF229ED9), "Аккаунт",
                                     "Номер, имя пользователя, «О себе»", "Аккаунт", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("💬", Color(0xFFFF9F0A), "Настройки чатов",
@@ -748,8 +748,8 @@ private fun ProfileSettingsScreen(
                                     "Русский", "Язык", expandedSetting) { expandedSetting = it }
 
                                 Spacer(Modifier.height(22.dp))
-                                Text("LosGram", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+                                Text("LosGram", color = White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
                                 OwnerPanel(session)
                                 Spacer(Modifier.height(12.dp))
                                 SettingsEntry("⭐", Color(0xFF8D68F5), "LosGram Premium",
@@ -807,18 +807,18 @@ private fun SettingsEntry(
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .clickable { onExpand(if (expanded == key) "" else key) }
-                .padding(vertical = 12.dp, horizontal = 2.dp),
+                .padding(vertical = 9.dp, horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.size(56.dp).clip(RoundedCornerShape(17.dp)).background(tint),
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(tint),
                 contentAlignment = Alignment.Center) {
-                Text(icon, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text(icon, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             }
-            Spacer(Modifier.width(18.dp))
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = White, fontSize = 19.sp, fontWeight = FontWeight.Medium)
-                Text(subtitle, color = White.copy(alpha = 0.82f), fontSize = 14.sp,
-                    lineHeight = 18.sp)
+                Text(title, color = White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(subtitle, color = White.copy(alpha = 0.82f), fontSize = 13.sp,
+                    lineHeight = 16.sp)
             }
             if (expanded == key) Text("⌃", color = Muted, fontSize = 20.sp)
         }
@@ -839,7 +839,7 @@ private fun SettingsEntry(
                     else -> "Раздел интерфейса LosGram. Подключение дополнительных функций будет следующим этапом."
                 },
                 color = Muted, fontSize = 13.sp,
-                modifier = Modifier.fillMaxWidth().padding(start = 74.dp, end = 8.dp, bottom = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(start = 60.dp, end = 8.dp, bottom = 10.dp)
             )
         }
     }
@@ -863,14 +863,14 @@ private fun OwnerPanel(session: LoginSession) {
         checked = true
     }
     if (!checked || !isAdmin) return
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF3A315B)), contentAlignment = Alignment.Center) {
-                Text("♛", color = Color(0xFFC5A6FF), fontSize = 23.sp)
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF3A315B)), contentAlignment = Alignment.Center) {
+                Text("♛", color = Color(0xFFC5A6FF), fontSize = 20.sp)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Панель владельца", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Панель владельца", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Text("Управление аккаунтами LosGram", color = Muted, fontSize = 12.sp)
             }
             Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
