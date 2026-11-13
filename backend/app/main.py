@@ -798,6 +798,82 @@ def admin_grant(payload: AdminGrantRequest, db: Session = Depends(get_db),
 
 
 
+@app.get("/admin/telegram/gifts")
+def admin_telegram_gifts(admin: User = Depends(require_admin)):
+    """Return Telegram's currently available base gifts (not collectible upgrade variants)."""
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Не задан TELEGRAM_BOT_TOKEN в Render")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getAvailableGifts",
+        headers={"User-Agent": "LosGram/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось получить каталог Telegram: {type(exc).__name__}")
+    if not payload.get("ok"):
+        raise HTTPException(status_code=502, detail="Telegram Bot API вернул ошибку")
+    items = []
+    for gift in payload.get("result", {}).get("gifts", []):
+        sticker = gift.get("sticker") or {}
+        items.append({
+            "id": str(gift.get("id", "")),
+            "name": sticker.get("emoji") or "Подарок Telegram",
+            "title": sticker.get("set_name") or "Подарок Telegram",
+            "stars": gift.get("star_count", 0),
+            "limited": bool(gift.get("is_limited", False)),
+            "remaining": gift.get("remaining_count"),
+            "total": gift.get("total_count"),
+            "image_url": f"/admin/telegram/gifts/{gift.get('id')}/image",
+            "status": "Не улучшен",
+        })
+    return {"items": items, "source": "Telegram Bot API getAvailableGifts",
+            "note": "Это доступные базовые подарки Telegram. Полный список collectible NFT-вариантов Telegram через Bot API не предоставляется."}
+
+
+@app.get("/admin/telegram/gifts/{gift_id}/image")
+def admin_telegram_gift_image(gift_id: str, admin: User = Depends(require_admin)):
+    if not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Не задан TELEGRAM_BOT_TOKEN в Render")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getAvailableGifts",
+        headers={"User-Agent": "LosGram/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        gift = next((x for x in payload.get("result", {}).get("gifts", [])
+                     if str(x.get("id")) == gift_id), None)
+        if not payload.get("ok") or gift is None:
+            raise HTTPException(status_code=404, detail="Подарок Telegram не найден")
+        file_id = (gift.get("sticker") or {}).get("file_id")
+        if not file_id:
+            raise HTTPException(status_code=404, detail="У подарка нет изображения")
+        file_request = urllib.request.Request(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}",
+            headers={"User-Agent": "LosGram/1.0"},
+        )
+        with urllib.request.urlopen(file_request, timeout=20) as response:
+            file_payload = json.loads(response.read().decode("utf-8"))
+        file_path = file_payload.get("result", {}).get("file_path")
+        if not file_payload.get("ok") or not file_path:
+            raise HTTPException(status_code=502, detail="Telegram не вернул путь к изображению")
+        image_request = urllib.request.Request(
+            f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}",
+            headers={"User-Agent": "LosGram/1.0"},
+        )
+        with urllib.request.urlopen(image_request, timeout=30) as response:
+            image_bytes = response.read()
+            content_type = response.headers.get("Content-Type", "image/webp")
+        return Response(content=image_bytes, media_type=content_type,
+                        headers={"Cache-Control": "public, max-age=3600"})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Не удалось загрузить изображение Telegram: {type(exc).__name__}")
+
+
 @app.get("/admin/gifts")
 def admin_list_gifts(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     rows = db.execute(select(CollectibleGift, User).join(User, User.id == CollectibleGift.user_id).order_by(CollectibleGift.number.desc()).limit(300)).all()
