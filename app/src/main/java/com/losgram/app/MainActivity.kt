@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,7 +53,7 @@ private val White = Color(0xFFF2F2F2)
 
 data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
 data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false, val isSaved: Boolean = false)
-data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean)
+data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean, val replyToId: Int? = null, val replyToBody: String? = null, val edited: Boolean = false, val deleted: Boolean = false)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -522,46 +523,73 @@ private fun StarsTopUpNotice(event: JSONObject) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: () -> Unit) {
     var messages by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
+    var selectedMessage by remember { mutableStateOf<MessageItem?>(null) }
+    var replyTo by remember { mutableStateOf<MessageItem?>(null) }
+    var editing by remember { mutableStateOf<MessageItem?>(null) }
+    var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun reload() {
-        val response = api("/conversations/${chat.id}/messages", session.token)
+        val response = api("/conversations/\${chat.id}/messages", session.token)
         val arr = response.optJSONArray("items") ?: JSONArray()
         messages = (0 until arr.length()).map {
             val item = arr.getJSONObject(it)
             val sender = item.optInt("sender_id")
-            MessageItem(item.optInt("id"), sender, item.optString("body"), sender == session.userId)
+            val parentId = item.optInt("reply_to_id").takeIf { id -> id > 0 }
+            val parent = parentId?.let { id -> (0 until arr.length()).firstNotNullOfOrNull { ix ->
+                arr.optJSONObject(ix)?.takeIf { it.optInt("id") == id }
+            } }
+            MessageItem(item.optInt("id"), sender, item.optString("body"), sender == session.userId,
+                parentId, parent?.optString("body"), item.optBoolean("edited"), item.optBoolean("deleted"))
         }
     }
 
     LaunchedEffect(chat.id) {
         try {
             while (true) {
-                try {
-                    reload()
-                    error = ""
-                } catch (e: Exception) {
-                    error = e.message ?: "Не удалось загрузить сообщения"
-                } finally {
-                    loading = false
-                }
+                try { reload(); error = "" }
+                catch (e: Exception) { error = e.message ?: "Не удалось загрузить сообщения" }
+                finally { loading = false }
                 delay(3000)
             }
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            // Stop polling when the user leaves this conversation.
+        } catch (_: kotlinx.coroutines.CancellationException) { }
+    }
+
+    fun sendDraft() {
+        val text = draft.trim()
+        if (text.isBlank() || busy) return
+        scope.launch {
+            busy = true
+            try {
+                val target = editing
+                if (target != null) {
+                    api("/conversations/\${chat.id}/messages/\${target.id}", session.token, "PATCH",
+                        JSONObject().put("body", text))
+                } else {
+                    val body = JSONObject().put("body", text)
+                    replyTo?.let { body.put("reply_to_id", it.id) }
+                    api("/conversations/\${chat.id}/messages", session.token, "POST", body)
+                }
+                draft = ""
+                replyTo = null
+                editing = null
+                reload()
+                error = ""
+            } catch (e: Exception) { error = e.message ?: "Не удалось сохранить сообщение" }
+            finally { busy = false }
         }
     }
 
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column {
-            Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().background(Panel).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = Blue, fontSize = 30.sp, modifier = Modifier.clickable { onBack() }.padding(end = 14.dp))
                 Text(chat.name, color = White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -575,42 +603,68 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                             try { JSONObject(message.body.removePrefix("LG_EVENT:")) } catch (_: Exception) { null }
                         } else null
                     }
-                    if (event?.optString("type") == "stars_topup") {
-                        StarsTopUpNotice(event)
-                    } else {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement =
-                            if (message.mine) Arrangement.End else Arrangement.Start) {
-                            Text(message.body, color = White,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                                    .background(if (message.mine) Color(0xFF245B87) else Panel,
-                                        RoundedCornerShape(14.dp)).padding(12.dp))
+                    if (event?.optString("type") == "stars_topup") StarsTopUpNotice(event)
+                    else Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start) {
+                        Column(Modifier.widthIn(max = 300.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
+                            .background(if (message.mine) Color(0xFF245B87) else Panel)
+                            .combinedClickable(onClick = {}, onLongClick = {
+                                if (!message.deleted && !message.body.startsWith("LG_EVENT:")) selectedMessage = message
+                            }).padding(12.dp)) {
+                            message.replyToBody?.takeIf { it.isNotBlank() }?.let {
+                                Text("↪ $it", color = Color(0xFFB8D7F0), fontSize = 11.sp, maxLines = 2,
+                                    modifier = Modifier.padding(bottom = 5.dp))
+                            }
+                            Text(message.body, color = if (message.deleted) Muted else White)
+                            if (message.edited && !message.deleted) Text("изменено", color = Color(0xFFB8D7F0),
+                                fontSize = 10.sp, modifier = Modifier.align(Alignment.End).padding(top = 3.dp))
                         }
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().background(Panel).padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(value = draft, onValueChange = { draft = it },
-                    modifier = Modifier.weight(1f), placeholder = { Text("Сообщение") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Blue, unfocusedBorderColor = Navy,
-                        focusedTextColor = White, unfocusedTextColor = White,
-                        focusedContainerColor = Navy, unfocusedContainerColor = Navy))
-                Spacer(Modifier.width(8.dp))
-                Button(enabled = draft.isNotBlank(), onClick = {
-                    val text = draft.trim()
-                    scope.launch {
-                        try {
-                            api("/conversations/${chat.id}/messages", session.token, "POST",
-                                JSONObject().put("body", text))
-                            draft = ""
-                            reload()
-                            error = ""
-                        } catch (e: Exception) { error = e.message ?: "Не удалось отправить сообщение" }
+            if (replyTo != null || editing != null) {
+                Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (editing != null) "Редактирование сообщения" else "Ответ на сообщение",
+                            color = Blue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text((editing ?: replyTo)?.body.orEmpty(), color = Muted, fontSize = 12.sp, maxLines = 1)
                     }
-                }, colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("➤") }
+                    Text("✕", color = White, modifier = Modifier.clickable { replyTo = null; editing = null; draft = "" }.padding(8.dp))
+                }
+            }
+            Row(Modifier.fillMaxWidth().background(Panel).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
+                    placeholder = { Text(if (editing != null) "Изменить сообщение" else "Сообщение") }, enabled = !busy,
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Blue, unfocusedBorderColor = Navy,
+                        focusedTextColor = White, unfocusedTextColor = White, focusedContainerColor = Navy, unfocusedContainerColor = Navy))
+                Spacer(Modifier.width(8.dp))
+                Button(enabled = draft.isNotBlank() && !busy, onClick = { sendDraft() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text(if (editing != null) "✓" else "➤") }
             }
         }
+    }
+
+    selectedMessage?.let { message ->
+        AlertDialog(onDismissRequest = { selectedMessage = null }, title = { Text("Сообщение") },
+            text = { Text(message.body, maxLines = 3) },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { replyTo = message; editing = null; draft = ""; selectedMessage = null }) { Text("Ответить") }
+                    if (message.mine) {
+                        TextButton(onClick = { editing = message; replyTo = null; draft = message.body; selectedMessage = null }) { Text("Изменить") }
+                        TextButton(onClick = {
+                            selectedMessage = null
+                            scope.launch {
+                                try {
+                                    api("/conversations/\${chat.id}/messages/\${message.id}", session.token, "DELETE")
+                                    reload()
+                                } catch (e: Exception) { error = e.message ?: "Не удалось удалить сообщение" }
+                            }
+                        }) { Text("Удалить", color = Color(0xFFFF7777)) }
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { selectedMessage = null }) { Text("Закрыть") } })
     }
 }
 
