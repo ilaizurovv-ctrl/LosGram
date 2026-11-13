@@ -631,95 +631,129 @@ private fun ProfileSettingsScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 30.dp)) {
                     if (showProfile) {
                         item {
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                                .background(Panel).padding(20.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(Modifier.size(112.dp).clip(CircleShape).background(Blue),
-                                    contentAlignment = Alignment.Center) {
-                                    Text(displayName.trim().take(1).uppercase().ifBlank { "L" },
-                                        color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(54.dp).clip(CircleShape).background(Panel),
+                                        contentAlignment = Alignment.Center) { Text("▦", color = White, fontSize = 26.sp) }
+                                    Box(Modifier.size(54.dp).clip(CircleShape).background(Panel),
+                                        contentAlignment = Alignment.Center) { Text("⋮", color = White, fontSize = 28.sp) }
                                 }
-                                Spacer(Modifier.height(12.dp))
-                                Text(displayName.ifBlank { "Ваше имя" }, color = White,
-                                    fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                                Text(if (username.isNotBlank()) "@$username" else "Имя пользователя не задано",
-                                    color = Blue, fontSize = 14.sp)
-                                Spacer(Modifier.height(8.dp))
-                                Text(session.virtualNumber, color = Muted, fontSize = 13.sp)
-                                if (bio.isNotBlank()) {
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(bio, color = White, fontSize = 14.sp)
+                                Spacer(Modifier.height(4.dp))
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    Box(Modifier.size(152.dp).clip(CircleShape).background(Panel),
+                                        contentAlignment = Alignment.Center) {
+                                        Text(displayName.trim().take(1).uppercase().ifBlank { "L" },
+                                            color = White, fontSize = 58.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
-                            }
-                            Spacer(Modifier.height(18.dp))
-                            Text("РЕДАКТИРОВАТЬ ПРОФИЛЬ", color = Blue, fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(8.dp))
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .background(Panel).padding(16.dp)) {
-                                Text("Имя и фамилия", color = Muted, fontSize = 12.sp)
-                                OutlinedTextField(displayName, { displayName = it.take(80) },
-                                    Modifier.fillMaxWidth(), singleLine = true,
-                                    placeholder = { Text("Как вас называть") })
-                                Spacer(Modifier.height(10.dp))
-                                Text("Имя пользователя", color = Muted, fontSize = 12.sp)
-                                OutlinedTextField(username, {
-                                    username = it.removePrefix("@").filter { ch -> ch.isLetterOrDigit() || ch == '_' }.take(32)
-                                }, Modifier.fillMaxWidth(), singleLine = true,
-                                    leadingIcon = { Text("@", color = Blue) },
-                                    placeholder = { Text("username") })
-                                Text("От 3 до 32 символов: латинские буквы, цифры и _",
-                                    color = Muted, fontSize = 11.sp)
-                                Spacer(Modifier.height(10.dp))
-                                Text("О себе", color = Muted, fontSize = 12.sp)
-                                OutlinedTextField(bio, { bio = it.take(160) },
-                                    Modifier.fillMaxWidth(), minLines = 3,
-                                    placeholder = { Text("Расскажите немного о себе") })
-                                Text("${bio.length}/160", color = Muted, fontSize = 11.sp,
-                                    modifier = Modifier.align(Alignment.End))
-                                Spacer(Modifier.height(10.dp))
-                                Text("Имя пользователя для поиска", color = Muted, fontSize = 12.sp)
-                                Text(link, color = Blue, fontSize = 14.sp)
-                                Spacer(Modifier.height(14.dp))
-                                Button(onClick = { saveProfile() }, enabled = !saving && displayName.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
-                                    Text(if (saving) "Сохраняем..." else "Сохранить изменения")
+                                Spacer(Modifier.height(28.dp))
+                                Text(displayName.ifBlank { "Ваше имя" } +
+                                    if (username.isNotBlank()) " #$username" else "",
+                                    color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Text("⚠  Рейтинг пока не рассчитан", color = Color(0xFFB83D4B),
+                                    fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Spacer(Modifier.height(34.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf("▣\nВыбрать фото", "✎\nИзменить", "⚙\nНастройки").forEachIndexed { index, label ->
+                                        Column(Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(22.dp))
+                                            .background(Panel).clickable {
+                                                when(index) {
+                                                    0 -> { expandedSetting = "ФОТО ПРОФИЛЯ"; message = "Укажите ссылку на фото в режиме редактирования" }
+                                                    1 -> expandedSetting = if (expandedSetting == "Редактирование профиля") "" else "Редактирование профиля"
+                                                    2 -> onBack()
+                                                }
+                                            }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center) {
+                                            Text(label.substringBefore("\n"), color = White, fontSize = 27.sp)
+                                            Text(label.substringAfter("\n"), color = White, fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                        }
+                                    }
                                 }
-                            }
-                            Spacer(Modifier.height(14.dp))
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .background(Panel).padding(16.dp)) {
-                                Text("ФОТО ПРОФИЛЯ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Ссылка на изображение (HTTPS)", color = Muted, fontSize = 12.sp)
-                                OutlinedTextField(avatarUrl, { avatarUrl = it.take(500) },
-                                    Modifier.fillMaxWidth(), singleLine = true,
-                                    placeholder = { Text("https://...") })
-                                Text("Загрузка фото с устройства и истории профиля будут добавлены отдельно.",
-                                    color = Muted, fontSize = 11.sp)
-                                Spacer(Modifier.height(8.dp))
-                                OutlinedButton(onClick = { saveProfile() }, enabled = !saving,
-                                    modifier = Modifier.fillMaxWidth()) { Text("Сохранить фото-ссылку") }
-                            }
-                            Spacer(Modifier.height(14.dp))
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .background(Panel).padding(16.dp)) {
-                                Text("КОНФИДЕНЦИАЛЬНОСТЬ", color = Blue, fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold)
-                                PreferenceSwitch("Показывать номер", "Разрешить другим видеть номер LosGram",
-                                    showPhone) { value ->
-                                    showPhone = value
-                                    scope.launch { try { api("/me/settings", session.token, "PATCH",
-                                        JSONObject().put("show_phone", value)) }
-                                        catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                                Spacer(Modifier.height(16.dp))
+                                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Panel)
+                                    .clickable { message = "Музыкальный статус появится в следующем обновлении" }
+                                    .padding(10.dp), contentAlignment = Alignment.Center) {
+                                    Text("♫  Добавить музыкальный статус  ›", color = White, fontSize = 14.sp)
                                 }
-                                Divider(color = Navy)
-                                PreferenceSwitch("Последняя активность", "Показывать время посещения",
-                                    showLastSeen) { value ->
-                                    showLastSeen = value
-                                    scope.launch { try { api("/me/settings", session.token, "PATCH",
-                                        JSONObject().put("show_last_seen", value)) }
-                                        catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                                Spacer(Modifier.height(30.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Канал", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Создать", color = Blue, fontSize = 13.sp,
+                                        modifier = Modifier.clickable { message = "Создание каналов пока не подключено" })
+                                }
+                                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 26.dp)
+                                    .clip(RoundedCornerShape(18.dp)).background(Panel).padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(68.dp).clip(CircleShape).background(Blue),
+                                        contentAlignment = Alignment.Center) { Text(displayName.take(1).uppercase(),
+                                        color = White, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
+                                    Spacer(Modifier.width(14.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Мой BIO", color = White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(if (bio.isNotBlank()) bio else "Добавьте описание профиля",
+                                            color = Muted, fontSize = 13.sp, maxLines = 2)
+                                    }
+                                    Text("›", color = Muted, fontSize = 24.sp)
+                                }
+                                Text(session.virtualNumber, color = White, fontSize = 20.sp)
+                                Text("Телефон", color = Muted, fontSize = 13.sp)
+                                Spacer(Modifier.height(22.dp))
+                                Text(if (bio.isNotBlank()) bio else "Добавьте информацию о себе",
+                                    color = White, fontSize = 17.sp)
+                                Text("О себе", color = Muted, fontSize = 13.sp)
+                                Spacer(Modifier.height(22.dp))
+                                Text(if (username.isNotBlank()) "@$username" else "Не задано",
+                                    color = White, fontSize = 20.sp)
+                                Text("Имя пользователя", color = Muted, fontSize = 13.sp)
+                                Spacer(Modifier.height(22.dp))
+                                Text("Не указана", color = White, fontSize = 20.sp)
+                                Text("Дата рождения", color = Muted, fontSize = 13.sp)
+                                Spacer(Modifier.height(22.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    listOf("Публикации", "Архив").forEach { tab ->
+                                        Box(Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(Panel)
+                                            .clickable { message = if(tab == "Архив") "Архив пока пуст" else "Публикаций пока нет" }
+                                            .padding(13.dp), contentAlignment = Alignment.Center) {
+                                            Text(tab, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                                if (expandedSetting == "Редактирование профиля") {
+                                    Spacer(Modifier.height(18.dp))
+                                    Text("РЕДАКТИРОВАТЬ ПРОФИЛЬ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    OutlinedTextField(displayName, { displayName = it.take(80) }, Modifier.fillMaxWidth(),
+                                        singleLine = true, label = { Text("Имя и фамилия") })
+                                    OutlinedTextField(username, { username = it.removePrefix("@").filter { ch -> ch.isLetterOrDigit() || ch == '_' }.take(32) },
+                                        Modifier.fillMaxWidth(), singleLine = true, label = { Text("Имя пользователя") })
+                                    OutlinedTextField(bio, { bio = it.take(160) }, Modifier.fillMaxWidth(),
+                                        minLines = 3, label = { Text("О себе") })
+                                    OutlinedTextField(avatarUrl, { avatarUrl = it.take(500) }, Modifier.fillMaxWidth(),
+                                        singleLine = true, label = { Text("Ссылка на фото HTTPS") })
+                                    Button(onClick = { saveProfile(); expandedSetting = "" }, enabled = !saving && displayName.isNotBlank(),
+                                        modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
+                                        Text(if (saving) "Сохраняем..." else "Сохранить изменения")
+                                    }
+                                }
+                                Spacer(Modifier.height(22.dp))
+                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).padding(14.dp)) {
+                                    Text("КОНФИДЕНЦИАЛЬНОСТЬ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    PreferenceSwitch("Показывать номер", "Разрешить другим видеть номер LosGram", showPhone) { value ->
+                                        showPhone = value
+                                        scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("show_phone", value)) }
+                                            catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                                    }
+                                    Divider(color = Navy)
+                                    PreferenceSwitch("Последняя активность", "Показывать время посещения", showLastSeen) { value ->
+                                        showLastSeen = value
+                                        scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("show_last_seen", value)) }
+                                            catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                                    }
                                 }
                             }
                         }
