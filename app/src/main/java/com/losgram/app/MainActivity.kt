@@ -2147,6 +2147,10 @@ private fun OwnerPanel(session: LoginSession) {
     var selectedTelegramGift by remember { mutableStateOf<JSONObject?>(null) }
     var telegramListingPrice by remember { mutableStateOf("") }
     var telegramListingQuantity by remember { mutableStateOf("1") }
+    var soldNfts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var selectedSoldNft by remember { mutableStateOf<JSONObject?>(null) }
+    var upgradePrice by remember { mutableStateOf("") }
+    var salesStatus by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.token) {
         try { isAdmin = api("/admin/users?q=", session.token).optJSONArray("items") != null }
@@ -2238,6 +2242,77 @@ private fun OwnerPanel(session: LoginSession) {
             }
             Text("Bot API показывает доступные боту базовые подарки. Коллекционные номера и редкие варианты Telegram здесь не представлены.",
                 color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 6.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("ПРОДАННЫЕ NFT И ДОСТУП К УЛУЧШЕНИЮ", color = Color(0xFFC5A6FF),
+            fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = {
+            scope.launch {
+                busy = true
+                try {
+                    val arr = api("/admin/nft-sales", session.token).optJSONArray("items") ?: JSONArray()
+                    soldNfts = (0 until arr.length()).map { arr.getJSONObject(it) }
+                    salesStatus = "Проданных NFT: ${soldNfts.size}"
+                } catch (e: Exception) { salesStatus = e.message ?: "Не удалось загрузить продажи" }
+                finally { busy = false }
+            }
+        }, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF356C83))) {
+            Text("Обновить проданные NFT", color = White)
+        }
+        if (salesStatus.isNotBlank()) Text(salesStatus, color = Muted, fontSize = 12.sp)
+        soldNfts.forEach { item ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Navy)
+                .clickable { selectedSoldNft = item; upgradePrice = item.optString("upgrade_price").takeIf { it != "null" } ?: "" }
+                .padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${item.optString("name")} №${item.optInt("number")}", color = White, fontWeight = FontWeight.SemiBold)
+                    Text("Покупатель: ${item.optString("buyer_name")} · Продан за ${item.optInt("price")} ⭐",
+                        color = Muted, fontSize = 11.sp)
+                    Text(when {
+                        item.optBoolean("upgrade_used") -> "Улучшение уже использовано"
+                        item.has("upgrade_price") && !item.isNull("upgrade_price") -> "Доступ выдан: ${item.optInt("upgrade_price")} ⭐"
+                        else -> "Доступ к улучшению не выдан"
+                    }, color = Color(0xFFFFC36B), fontSize = 11.sp)
+                }
+                Text("Настроить", color = Color(0xFFC5A6FF), fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(5.dp))
+        }
+        selectedSoldNft?.let { item ->
+            AlertDialog(
+                onDismissRequest = { if (!busy) selectedSoldNft = null },
+                title = { Text("Доступ к улучшению") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${item.optString("name")} №${item.optInt("number")} · ${item.optString("buyer_name")}",
+                            color = Muted, fontSize = 13.sp)
+                        OutlinedTextField(upgradePrice, { upgradePrice = it.filter(Char::isDigit).take(8) },
+                            label = { Text("Цена улучшения (⭐)") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        Text("Покупатель сможет выбрать модель, фон и узор. После оплаты Stars поступят владельцу, доступ будет использован один раз.",
+                            color = Muted, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = !busy && !item.optBoolean("upgrade_used") && (upgradePrice.toIntOrNull() ?: 0) > 0,
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                try {
+                                    api("/admin/nft-sales/${item.optInt("listing_id")}/upgrade-access",
+                                        session.token, "POST", JSONObject().put("price", upgradePrice.toInt()))
+                                    salesStatus = "Доступ к улучшению выдан покупателю за ${upgradePrice} ⭐"
+                                    selectedSoldNft = null
+                                    val arr = api("/admin/nft-sales", session.token).optJSONArray("items") ?: JSONArray()
+                                    soldNfts = (0 until arr.length()).map { arr.getJSONObject(it) }
+                                } catch (e: Exception) { salesStatus = e.message ?: "Не удалось выдать доступ" }
+                                finally { busy = false }
+                            }
+                        }) { Text("Выдать доступ") }
+                },
+                dismissButton = { TextButton(onClick = { selectedSoldNft = null }, enabled = !busy) { Text("Закрыть") } }
+            )
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = {
