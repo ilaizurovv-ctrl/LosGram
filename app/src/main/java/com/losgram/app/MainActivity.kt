@@ -2091,6 +2091,39 @@ private fun SettingsDetail(key: String) {
     }
 }
 
+private suspend fun downloadAdminGiftImage(giftId: String, token: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+    val connection = (URL("$API_BASE_URL/admin/telegram/gifts/${Uri.encode(giftId)}/image").openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"; connectTimeout = 20000; readTimeout = 30000
+        setRequestProperty("Authorization", "Bearer $token")
+    }
+    try { if (connection.responseCode !in 200..299) return@withContext null
+        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+    } finally { connection.disconnect() }
+}
+
+@Composable
+private fun TelegramGiftCard(gift: JSONObject, token: String) {
+    var bitmap by remember(gift.optString("id")) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(gift.optString("id"), token) {
+        bitmap = try { downloadAdminGiftImage(gift.optString("id"), token) } catch (_: Exception) { null }
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
+        .background(Navy).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = gift.optString("title"),
+            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)))
+        else Box(Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentAlignment = Alignment.Center) {
+            Text(gift.optString("name", "🎁"), fontSize = 28.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(gift.optString("title", "Подарок Telegram"), color = White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(gift.optString("name", "🎁") + " · Базовый, не улучшен", color = Muted, fontSize = 12.sp)
+            Text("⭐ ${gift.optInt("stars")}", color = Color(0xFFFFD76A), fontSize = 12.sp)
+            if (gift.optBoolean("limited")) Text("Ограниченный · осталось ${gift.optString("remaining", "?")}", color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
 @Composable
 private fun OwnerPanel(session: LoginSession) {
     var isAdmin by remember { mutableStateOf(false) }
@@ -2107,6 +2140,9 @@ private fun OwnerPanel(session: LoginSession) {
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var diagnosticsStatus by remember { mutableStateOf("") }
+    var telegramGifts by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var telegramCatalogStatus by remember { mutableStateOf("") }
+    var catalogExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(session.token) {
         try { isAdmin = api("/admin/users?q=", session.token).optJSONArray("items") != null }
@@ -2130,7 +2166,39 @@ private fun OwnerPanel(session: LoginSession) {
             }
             Text("OWNER", color = Color(0xFFC5A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        Button(onClick = {
+            scope.launch {
+                busy = true
+                telegramCatalogStatus = ""
+                try {
+                    val result = api("/admin/telegram/gifts", session.token)
+                    val arr = result.optJSONArray("items") ?: JSONArray()
+                    telegramGifts = (0 until arr.length()).map { arr.getJSONObject(it) }
+                    catalogExpanded = true
+                    telegramCatalogStatus = if (telegramGifts.isEmpty()) "Telegram вернул пустой список доступных базовых подарков." else "Загружено подарков: ${telegramGifts.size}. Это базовые подарки, не полный каталог collectible NFT."
+                } catch (e: Exception) { telegramCatalogStatus = e.message ?: "Не удалось загрузить каталог Telegram" }
+                finally { busy = false }
+            }
+        }, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF70549B))) {
+            Text(if (busy) "Загружаем каталог..." else "🎁 Каталог подарков Telegram", color = White)
+        }
+        if (telegramCatalogStatus.isNotBlank()) Text(telegramCatalogStatus,
+            color = if (telegramCatalogStatus.startsWith("Загружено")) Color(0xFF9BD18B) else Color(0xFFFFC36B),
+            fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+        if (catalogExpanded) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("БАЗОВЫЕ ПОДАРКИ TELEGRAM", color = Color(0xFFC5A6FF), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f))
+                Text("Скрыть", color = Muted, modifier = Modifier.clickable { catalogExpanded = false }.padding(6.dp))
+            }
+            if (telegramGifts.isEmpty()) Text("Подарков сейчас нет или Telegram не вернул доступные позиции.", color = Muted, fontSize = 12.sp)
+            else telegramGifts.forEach { gift -> TelegramGiftCard(gift, session.token) }
+            Text("Bot API показывает доступные боту базовые подарки. Коллекционные номера и редкие варианты Telegram здесь не представлены.",
+                color = Muted, fontSize = 11.sp, modifier = Modifier.padding(vertical = 6.dp))
+        }
+        Spacer(Modifier.height(8.dp))
         Button(onClick = {
             scope.launch {
                 busy = true
