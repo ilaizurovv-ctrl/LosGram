@@ -758,7 +758,27 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
 
     selectedMessage?.let { message ->
         AlertDialog(onDismissRequest = { selectedMessage = null }, title = { Text("Сообщение") },
-            text = { Text(message.body, maxLines = 3) },
+            text = {
+            Column {
+                Text(message.body, maxLines = 3)
+                Spacer(Modifier.height(10.dp))
+                Text("Поставить реакцию", color = Muted, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    listOf("👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉").forEach { emoji ->
+                        Text(emoji, fontSize = 20.sp, modifier = Modifier.clickable {
+                            selectedMessage = null
+                            scope.launch {
+                                try {
+                                    api("/conversations/${chat.id}/messages/${message.id}/reactions",
+                                        session.token, "POST", JSONObject().put("emoji", emoji))
+                                    reload()
+                                } catch (e: Exception) { error = e.message ?: "Не удалось поставить реакцию" }
+                            }
+                        }.padding(2.dp))
+                    }
+                }
+            }
+        },
             confirmButton = {
                 Row {
                     TextButton(onClick = { replyTo = message; editing = null; draft = ""; selectedMessage = null }) { Text("Ответить") }
