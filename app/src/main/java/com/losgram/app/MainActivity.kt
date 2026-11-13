@@ -59,7 +59,8 @@ private val White = Color(0xFFF2F2F2)
 
 data class LoginSession(val token: String, val userId: Int, val displayName: String, val virtualNumber: String)
 data class ChatItem(val id: Int, val name: String, val message: String, val isGlobal: Boolean = false, val isSaved: Boolean = false)
-data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean, val replyToId: Int? = null, val replyToBody: String? = null, val edited: Boolean = false, val deleted: Boolean = false)
+data class MessageReactionItem(val emoji: String, val count: Int, val mine: Boolean)
+data class MessageItem(val id: Int, val senderId: Int, val body: String, val mine: Boolean, val replyToId: Int? = null, val replyToBody: String? = null, val edited: Boolean = false, val deleted: Boolean = false, val reactions: List<MessageReactionItem> = emptyList())
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -583,7 +584,12 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                 arr.optJSONObject(ix)?.takeIf { it.optInt("id") == id }
             } }
             MessageItem(item.optInt("id"), sender, item.optString("body"), sender == session.userId,
-                parentId, parent?.optString("body"), item.optBoolean("edited"), item.optBoolean("deleted"))
+                parentId, parent?.optString("body"), item.optBoolean("edited"), item.optBoolean("deleted"),
+                (item.optJSONArray("reactions") ?: JSONArray()).let { reactions ->
+                    (0 until reactions.length()).map { index -> reactions.getJSONObject(index).let { reaction ->
+                        MessageReactionItem(reaction.optString("emoji"), reaction.optInt("count"), reaction.optBoolean("mine"))
+                    } }
+                })
         }
     }
 
@@ -686,6 +692,26 @@ private fun ConversationScreen(session: LoginSession, chat: ChatItem, onBack: ()
                             }
                             Text(if (message.deleted) "Сообщение удалено" else message.body,
                                 color = if (message.deleted) Color(0xFFB3BEC8) else White, fontSize = 16.sp)
+                            if (message.reactions.isNotEmpty() && !message.deleted) {
+                                Row(Modifier.fillMaxWidth().padding(top = 5.dp), horizontalArrangement = Arrangement.End) {
+                                    message.reactions.forEach { reaction ->
+                                        Text("${reaction.emoji} ${reaction.count}",
+                                            color = if (reaction.mine) Color(0xFFB8E0FF) else White,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(end = 5.dp).clip(RoundedCornerShape(12.dp))
+                                                .background(if (reaction.mine) Color(0x553A8CCB) else Color(0x33222222))
+                                                .clickable {
+                                                    scope.launch {
+                                                        try {
+                                                            api("/conversations/${chat.id}/messages/${message.id}/reactions",
+                                                                session.token, "POST", JSONObject().put("emoji", reaction.emoji))
+                                                            reload()
+                                                        } catch (e: Exception) { error = e.message ?: "Не удалось изменить реакцию" }
+                                                    }
+                                                }.padding(horizontal = 7.dp, vertical = 3.dp))
+                                    }
+                                }
+                            }
                             Row(Modifier.align(Alignment.End).padding(top = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 if (message.edited && !message.deleted) {
