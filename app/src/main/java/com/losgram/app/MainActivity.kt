@@ -562,67 +562,177 @@ private fun ProfileSettingsScreen(
     onLogout: () -> Unit
 ) {
     var expanded by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf(session.displayName) }
+    var username by remember { mutableStateOf("") }
+    var bio by remember { mutableStateOf("") }
+    var businessName by remember { mutableStateOf("") }
+    var businessDescription by remember { mutableStateOf("") }
+    var notifications by remember { mutableStateOf(true) }
+    var showPhone by remember { mutableStateOf(false) }
+    var showLastSeen by remember { mutableStateOf(true) }
+    var theme by remember { mutableStateOf("dark") }
+    var loading by remember { mutableStateOf(true) }
+    var saving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(session.token) {
+        try {
+            val me = api("/me", session.token)
+            displayName = me.optString("display_name", session.displayName)
+            username = me.optString("username")
+            bio = me.optString("bio")
+            businessName = me.optString("business_name")
+            businessDescription = me.optString("business_description")
+            val prefs = api("/me/settings", session.token)
+            notifications = prefs.optBoolean("notifications_enabled", true)
+            showPhone = prefs.optBoolean("show_phone", false)
+            showLastSeen = prefs.optBoolean("show_last_seen", true)
+            theme = prefs.optString("theme", "dark")
+        } catch (e: Exception) { message = e.message ?: "Не удалось загрузить профиль" }
+        loading = false
+    }
+
     val title = if (showProfile) "Профиль" else "Настройки"
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 22.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 Text("‹", color = Blue, fontSize = 32.sp,
                     modifier = Modifier.clickable { onBack() }.padding(end = 18.dp))
                 Text(title, color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
             }
-            if (showProfile) {
-                Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(112.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
-                        Text(session.displayName.take(1).uppercase(), color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Text(session.displayName, color = White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                    Text(session.virtualNumber, color = Muted, fontSize = 16.sp)
-                    Spacer(Modifier.height(22.dp))
-                    SettingsRow("Изменить имя", "Настроить отображаемое имя", expanded, { expanded = if (expanded == it) "" else it })
-                    SettingsRow("Аватар профиля", "Фотография профиля — скоро", expanded, { expanded = if (expanded == it) "" else it })
-                    SettingsRow("О себе", "Добавить описание — скоро", expanded, { expanded = if (expanded == it) "" else it })
-                    SettingsRow("Мой QR-код", "Быстро поделиться профилем — скоро", expanded, { expanded = if (expanded == it) "" else it })
+            if (loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Blue)
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 24.dp)) {
-                    item {
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
-                            Text("⭐ Los Premium", color = Color(0xFFFFD76A), fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(6.dp))
-                            Text("Больше возможностей, эксклюзивное оформление и расширенные функции.", color = Muted, fontSize = 14.sp)
-                            Spacer(Modifier.height(12.dp))
-                            Button(onClick = { expanded = "premium" }, colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
-                                Text("Подробнее")
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 28.dp)) {
+                    if (showProfile) {
+                        item {
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(Modifier.size(104.dp).clip(CircleShape).background(Blue), contentAlignment = Alignment.Center) {
+                                    Text(displayName.take(1).uppercase(), color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Text(session.virtualNumber, color = Muted, fontSize = 14.sp)
                             }
-                            if (expanded == "premium") Text("Подписка и оплата появятся после подключения безопасной платёжной системы.", color = White, fontSize = 13.sp)
+                            Spacer(Modifier.height(18.dp))
+                            Text("Имя", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(displayName, { displayName = it.take(80) }, Modifier.fillMaxWidth(), singleLine = true,
+                                placeholder = { Text("Ваше имя") })
+                            Spacer(Modifier.height(8.dp))
+                            Text("Имя пользователя", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(username, { username = it.filter { ch -> ch.isLetterOrDigit() || ch == '_' }.take(32) },
+                                Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("username") },
+                                leadingIcon = { Text("@", color = Muted) })
+                            Spacer(Modifier.height(8.dp))
+                            Text("О себе", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(bio, { bio = it.take(160) }, Modifier.fillMaxWidth(), minLines = 2,
+                                placeholder = { Text("Коротко о себе") })
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = {
+                                saving = true; message = ""
+                                scope.launch {
+                                    try {
+                                        val body = JSONObject().put("display_name", displayName.trim())
+                                            .put("username", username.trim().ifBlank { JSONObject.NULL })
+                                            .put("bio", bio.trim())
+                                        api("/me", session.token, "PATCH", body)
+                                        message = "Профиль сохранён"
+                                    } catch (e: Exception) { message = e.message ?: "Не удалось сохранить" }
+                                    finally { saving = false }
+                                }
+                            }, enabled = !saving && displayName.isNotBlank(), modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Blue)) {
+                                Text(if (saving) "Сохраняем..." else "Сохранить профиль")
+                            }
+                            Text("Аватар: загрузка фотографии появится после подключения защищённого хранилища.", color = Muted, fontSize = 12.sp)
                         }
-                        Spacer(Modifier.height(12.dp))
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Panel).padding(18.dp)) {
-                            Text("⭐ Звёзды LosGram", color = Color(0xFFFFD76A), fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                            Text("Подарки авторам и поддержка каналов — скоро.", color = Muted, fontSize = 14.sp)
-                            TextButton(onClick = { expanded = "stars" }) { Text("Узнать больше", color = Blue) }
-                            if (expanded == "stars") Text("Баланс звёзд и покупки будут доступны после интеграции платежей.", color = White, fontSize = 13.sp)
+                    } else {
+                        item {
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp)) {
+                                Text("⭐ Los Premium", color = Color(0xFFFFD76A), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                                Text("Подписка расширит лимиты и откроет дополнительные возможности.", color = Muted, fontSize = 14.sp)
+                                Text("Покупка станет доступна после подключения платёжного провайдера.", color = White, fontSize = 13.sp)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp)) {
+                                Text("⭐ Звёзды LosGram", color = Color(0xFFFFD76A), fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                                Text("Баланс: пока 0 звёзд", color = White, fontSize = 15.sp)
+                                Text("Покупка и отправка звёзд требуют платёжной интеграции.", color = Muted, fontSize = 13.sp)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text("БИЗНЕС-ПРОФИЛЬ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            OutlinedTextField(businessName, { businessName = it.take(120) }, Modifier.fillMaxWidth(),
+                                label = { Text("Название компании") }, singleLine = true)
+                            OutlinedTextField(businessDescription, { businessDescription = it.take(500) }, Modifier.fillMaxWidth(),
+                                label = { Text("Описание бизнеса") }, minLines = 2)
+                            Button(onClick = {
+                                saving = true; message = ""
+                                scope.launch {
+                                    try {
+                                        api("/me/business", session.token, "PUT",
+                                            JSONObject().put("business_name", businessName.trim())
+                                                .put("business_description", businessDescription.trim()))
+                                        message = "Бизнес-профиль сохранён"
+                                    } catch (e: Exception) { message = e.message ?: "Не удалось сохранить" }
+                                    finally { saving = false }
+                                }
+                            }, enabled = !saving && businessName.trim().length >= 2, modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Сохранить бизнес-профиль") }
+                            Spacer(Modifier.height(16.dp))
+                            Text("УВЕДОМЛЕНИЯ И КОНФИДЕНЦИАЛЬНОСТЬ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            PreferenceSwitch("Уведомления", "Получать уведомления", notifications) { value ->
+                                notifications = value
+                                scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("notifications_enabled", value)) }
+                                    catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                            }
+                            PreferenceSwitch("Показывать номер", "Разрешить отображение номера профиля", showPhone) { value ->
+                                showPhone = value
+                                scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("show_phone", value)) }
+                                    catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                            }
+                            PreferenceSwitch("Время последнего посещения", "Показывать статус активности", showLastSeen) { value ->
+                                showLastSeen = value
+                                scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("show_last_seen", value)) }
+                                    catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                            }
+                            Text("ТЕМА", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                listOf("dark" to "Тёмная", "light" to "Светлая", "system" to "Системная").forEach { (value, label) ->
+                                    FilterChip(selected = theme == value, onClick = {
+                                        theme = value
+                                        scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("theme", value)) }
+                                            catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
+                                    }, label = { Text(label) }, modifier = Modifier.padding(end = 4.dp))
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Text("Устройства, помощь и дополнительные функции появятся в следующих обновлениях.", color = Muted, fontSize = 13.sp)
+                            OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                                Text("Выйти из аккаунта", color = Color(0xFFFF7777))
+                            }
                         }
-                        Spacer(Modifier.height(12.dp))
-                        SettingsRow("Los Premium для бизнеса", "Инструменты для компаний и магазинов", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Уведомления", "Звуки и настройки уведомлений", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Конфиденциальность", "Кто может видеть ваши данные", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Оформление", "Тема и внешний вид приложения", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Язык", "Язык приложения", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Устройства", "Активные сеансы — скоро", expanded, { expanded = if (expanded == it) "" else it })
-                        SettingsRow("Помощь", "Поддержка LosGram", expanded, { expanded = if (expanded == it) "" else it })
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                            Text("Выйти из аккаунта", color = Color(0xFFFF7777))
-                        }
+                    }
+                    if (message.isNotBlank()) item {
+                        Text(message, color = if (message.contains("сохранён")) Blue else Color(0xFFFF7777),
+                            modifier = Modifier.padding(vertical = 10.dp))
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PreferenceSwitch(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = White, fontSize = 16.sp)
+            Text(subtitle, color = Muted, fontSize = 12.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
