@@ -571,6 +571,7 @@ private fun ProfileSettingsScreen(
     var showPhone by remember { mutableStateOf(false) }
     var showLastSeen by remember { mutableStateOf(true) }
     var theme by remember { mutableStateOf("dark") }
+    var expandedSetting by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -724,67 +725,121 @@ private fun ProfileSettingsScreen(
                         }
                     } else {
                         item {
-                            OwnerPanel(session)
-                            Spacer(Modifier.height(10.dp))
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp)) {
-                                Text("⭐ Los Premium", color = Color(0xFFFFD76A), fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                                Text("Подписка расширит лимиты и откроет дополнительные возможности.", color = Muted, fontSize = 14.sp)
-                                Text("Покупка станет доступна после подключения платёжного провайдера.", color = White, fontSize = 13.sp)
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(18.dp)) {
-                                Text("⭐ Звёзды LosGram", color = Color(0xFFFFD76A), fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                                Text("Баланс: пока 0 звёзд", color = White, fontSize = 15.sp)
-                                Text("Покупка и отправка звёзд требуют платёжной интеграции.", color = Muted, fontSize = 13.sp)
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Text("БИЗНЕС-ПРОФИЛЬ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            OutlinedTextField(businessName, { businessName = it.take(120) }, Modifier.fillMaxWidth(),
-                                label = { Text("Название компании") }, singleLine = true)
-                            OutlinedTextField(businessDescription, { businessDescription = it.take(500) }, Modifier.fillMaxWidth(),
-                                label = { Text("Описание бизнеса") }, minLines = 2)
-                            Button(onClick = {
-                                saving = true; message = ""
-                                scope.launch {
-                                    try {
-                                        api("/me/business", session.token, "PUT",
-                                            JSONObject().put("business_name", businessName.trim())
-                                                .put("business_description", businessDescription.trim()))
-                                        message = "Бизнес-профиль сохранён"
-                                    } catch (e: Exception) { message = e.message ?: "Не удалось сохранить" }
-                                    finally { saving = false }
+                            Column(Modifier.fillMaxWidth()) {
+                                Text("Аккаунты", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp))
+                                SettingsEntry("👤", Color(0xFF229ED9), "Аккаунт",
+                                    "Номер, имя пользователя, «О себе»", "Аккаунт", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("💬", Color(0xFFFF9F0A), "Настройки чатов",
+                                    "Обои, ночной режим, анимации", "Настройки чатов", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🔑", Color(0xFF35C759), "Конфиденциальность",
+                                    "Время захода, устройства, ключи доступа", "Конфиденциальность", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🔔", Color(0xFFFF4058), "Уведомления",
+                                    "Звуки, звонки, счётчик сообщений", "Уведомления", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("◒", Color(0xFF477BEE), "Данные и память",
+                                    "Настройки загрузки медиафайлов", "Данные и память", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("📁", Color(0xFF229ED9), "Папки с чатами",
+                                    "Создание и сортировка папок", "Папки с чатами", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("💻", Color(0xFF229ED9), "Устройства",
+                                    "Управление активными сеансами", "Устройства", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🔋", Color(0xFFFF8617), "Энергосбережение",
+                                    "Экономия энергии при низком заряде", "Энергосбережение", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🌐", Color(0xFFB45BE5), "Язык",
+                                    "Русский", "Язык", expandedSetting) { expandedSetting = it }
+
+                                Spacer(Modifier.height(22.dp))
+                                Text("LosGram", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+                                OwnerPanel(session)
+                                Spacer(Modifier.height(12.dp))
+                                SettingsEntry("⭐", Color(0xFF8D68F5), "LosGram Premium",
+                                    "Дополнительные возможности подписки", "LosGram Premium", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
+                                    "Баланс и начисления звёзд", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
+                                    "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
+                                    "Подарки пользователям LosGram", "Отправить подарок", expandedSetting) { expandedSetting = it }
+
+                                Spacer(Modifier.height(22.dp))
+                                Text("Помощь", color = White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+                                SettingsEntry("•••", Color(0xFFFF9F0A), "Задать вопрос",
+                                    "Связаться с командой LosGram", "Задать вопрос", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("?", Color(0xFF229ED9), "Вопросы о LosGram",
+                                    "Ответы на частые вопросы", "Вопросы о LosGram", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("✦", Color(0xFFB45BE5), "Возможности LosGram",
+                                    "Что доступно в мессенджере", "Возможности LosGram", expandedSetting) { expandedSetting = it }
+                                SettingsEntry("✓", Color(0xFF35C759), "Политика конфиденциальности",
+                                    "Как защищаются ваши данные", "Политика конфиденциальности", expandedSetting) { expandedSetting = it }
+
+                                Spacer(Modifier.height(18.dp))
+                                Text("LosGram для Android • Настройки", color = Muted, fontSize = 12.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Выйти из аккаунта", color = Color(0xFFFF7777))
                                 }
-                            }, enabled = !saving && businessName.trim().length >= 2, modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Сохранить бизнес-профиль") }
-                            Spacer(Modifier.height(16.dp))
-                            Text("УВЕДОМЛЕНИЯ", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            PreferenceSwitch("Уведомления", "Получать уведомления", notifications) { value ->
-                                notifications = value
-                                scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("notifications_enabled", value)) }
-                                    catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
-                            }
-                            Text("ТЕМА", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                listOf("dark" to "Тёмная", "light" to "Светлая", "system" to "Системная").forEach { (value, label) ->
-                                    FilterChip(selected = theme == value, onClick = {
-                                        theme = value
-                                        scope.launch { try { api("/me/settings", session.token, "PATCH", JSONObject().put("theme", value)) }
-                                            catch (e: Exception) { message = e.message ?: "Ошибка сохранения" } }
-                                    }, label = { Text(label) }, modifier = Modifier.padding(end = 4.dp))
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                                Text("Выйти из аккаунта", color = Color(0xFFFF7777))
                             }
                         }
-                    }
                     if (message.isNotBlank()) item {
                         Text(message, color = if (message.contains("сохран")) Blue else Color(0xFFFF7777),
                             modifier = Modifier.padding(vertical = 10.dp))
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsEntry(
+    icon: String,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    key: String,
+    expanded: String,
+    onExpand: (String) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .clickable { onExpand(if (expanded == key) "" else key) }
+                .padding(vertical = 12.dp, horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(17.dp)).background(tint),
+                contentAlignment = Alignment.Center) {
+                Text(icon, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(18.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = White, fontSize = 19.sp, fontWeight = FontWeight.Medium)
+                Text(subtitle, color = White.copy(alpha = 0.82f), fontSize = 14.sp,
+                    lineHeight = 18.sp)
+            }
+            if (expanded == key) Text("⌃", color = Muted, fontSize = 20.sp)
+        }
+        if (expanded == key) {
+            Text(
+                when (key) {
+                    "Устройства" -> "Здесь будет список активных устройств и возможность завершить сеанс."
+                    "Конфиденциальность" -> "Настройте видимость номера, времени посещения и доступ к аккаунту."
+                    "Уведомления" -> "Настройки звуков и уведомлений будут подключены отдельно."
+                    "Данные и память" -> "Управление автозагрузкой фото, видео и очисткой кэша."
+                    "Папки с чатами" -> "Создавайте папки и распределяйте переписки по категориям."
+                    "Энергосбережение" -> "Настройки анимации и фоновой активности для экономии заряда."
+                    "Язык" -> "Сейчас выбран русский язык."
+                    "Аккаунт" -> "Изменение имени, username, номера и описания профиля доступно в разделе «Профиль»."
+                    "LosGram Premium" -> "Подписка пока управляется владельцем вручную. Покупка не подключена."
+                    "Звёзды LosGram" -> "Начисление звёзд выполняется владельцем через панель владельца."
+                    "LosGram для бизнеса" -> "Настройки бизнес-профиля доступны в профиле LosGram."
+                    else -> "Раздел интерфейса LosGram. Подключение дополнительных функций будет следующим этапом."
+                },
+                color = Muted, fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().padding(start = 74.dp, end = 8.dp, bottom = 12.dp)
+            )
         }
     }
 }
