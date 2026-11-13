@@ -27,6 +27,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
@@ -732,6 +734,7 @@ private fun ProfileSettingsScreen(
     var showLastSeen by remember { mutableStateOf(true) }
     var theme by remember { mutableStateOf("dark") }
     var expandedSetting by remember { mutableStateOf("") }
+    var showStarsPage by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -776,6 +779,7 @@ private fun ProfileSettingsScreen(
     }
 
     val link = if (username.isNotBlank()) "@$username" else "Сначала задайте username"
+    if (showStarsPage) { StarsWalletScreen(starsBalance) { showStarsPage = false }; return }
     Surface(Modifier.fillMaxSize(), color = Navy) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 20.dp),
@@ -1020,7 +1024,7 @@ private fun ProfileSettingsScreen(
                                 SettingsEntry("⭐", Color(0xFF8D68F5), "LosGram Premium",
                                     if (premiumActive) "Подписка активна" else "Подключить Premium и управлять подпиской", "LosGram Premium", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("★", Color(0xFFFF9F0A), "Звёзды LosGram",
-                                    "Баланс: $starsBalance ⭐ · история и пополнение", "Звёзды LosGram", expandedSetting) { expandedSetting = it }
+                                    "Баланс, пополнение и история операций", "Звёзды LosGram", expandedSetting) { showStarsPage = true }
                                 SettingsEntry("🏬", Color(0xFFFF4058), "LosGram для бизнеса",
                                     "Инструменты бизнес-профиля", "LosGram для бизнеса", expandedSetting) { expandedSetting = it }
                                 SettingsEntry("🎁", Color(0xFFFF8617), "Отправить подарок",
@@ -1059,6 +1063,30 @@ private fun ProfileSettingsScreen(
 }
 
 
+@Composable
+private fun StarsWalletScreen(balance: Int, onBack: () -> Unit) {
+    var tab by remember { mutableIntStateOf(0) }
+    var notice by remember { mutableStateOf("") }
+    val spin = rememberInfiniteTransition(label = "star-spin")
+    val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "angle")
+    Surface(Modifier.fillMaxSize(), color = Color.Black) { Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) { Text("‹", color = White, fontSize = 36.sp, modifier = Modifier.clickable { onBack() }.padding(end = 18.dp)); Text("Звёзды LosGram", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(18.dp)); Text("⭐", fontSize = 150.sp, modifier = Modifier.graphicsLayer { rotationY = angle; cameraDistance = 18f * density })
+            Spacer(Modifier.height(24.dp)); Text("Звёзды LosGram", color = White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp)); Text("Звёзды LosGram нужны для оплаты контента и услуг в мини-приложениях.", color = White, fontSize = 16.sp, lineHeight = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("Подробнее о звёздах  ›", color = Color(0xFFE06A6A), modifier = Modifier.clickable { notice = "Звёзды LosGram — внутренняя валюта для оплаты цифрового контента и услуг." }.padding(top = 4.dp))
+            Spacer(Modifier.height(58.dp)); Text("🌟  $balance", color = Color(0xFFFFD76A), fontSize = 42.sp, fontWeight = FontWeight.Bold); Text("Ваш баланс", color = White, fontSize = 17.sp)
+            Spacer(Modifier.height(22.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = { notice = "Покупка звёзд пока не подключена." }, modifier = Modifier.weight(1f).height(58.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(40.dp)) { Text("⊕  Пополнить", color = Color.Black) }
+                Button(onClick = { notice = "Статистика появится после подключения журнала транзакций." }, modifier = Modifier.weight(1f).height(58.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(40.dp)) { Text("▥  Статистика", color = Color.Black) } }
+            Text("♧  Подарить звёзды друзьям", color = White, fontSize = 17.sp, modifier = Modifier.clickable { notice = "Перевод звёзд друзьям пока не подключён." }.padding(vertical = 28.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Panel).clickable { notice = "Заработок звёзд будет доступен после подключения партнёрских ссылок." }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Text("✋", fontSize = 28.sp); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("Заработать звёзды  NEW", color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold); Text("Делитесь ссылками на мини-приложения и получайте часть их дохода в звёздах.", color = White, fontSize = 14.sp) }; Text("›", color = Muted, fontSize = 26.sp) }
+            Spacer(Modifier.height(26.dp)); Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Panel).padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) { listOf("Все операции", "Зачисления", "Списания").forEachIndexed { i, label -> Box(Modifier.weight(1f).clip(RoundedCornerShape(22.dp)).background(if (tab == i) Color(0xFF444444) else Color.Transparent).clickable { tab = i }.padding(vertical = 11.dp), contentAlignment = Alignment.Center) { Text(label, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) } } }
+            Text("Операций пока нет", color = Muted, modifier = Modifier.padding(vertical = 34.dp))
+        } } }
+    if (notice.isNotBlank()) AlertDialog(onDismissRequest = { notice = "" }, text = { Text(notice) }, confirmButton = { TextButton(onClick = { notice = "" }) { Text("Понятно") } })
+}
 @Composable
 private fun BotFatherPanel(session: LoginSession) {
     val context = LocalContext.current
