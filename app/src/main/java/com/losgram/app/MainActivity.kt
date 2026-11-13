@@ -33,6 +33,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1494,7 +1495,15 @@ private fun NFTMarketplaceScreen(session: LoginSession, onBack: () -> Unit) {
                         Box(Modifier.size(76.dp).clip(RoundedCornerShape(16.dp))
                             .background(if (isSeries) Color(0xFF123D4B) else Color(0xFF342B47)),
                             contentAlignment = Alignment.Center) {
-                            Text(if (isSeries) "⚔️" else "💎", fontSize = 38.sp)
+                            if (isSeries) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.light_sword),
+                                    contentDescription = "Light Sword",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text("💎", fontSize = 38.sp)
+                            }
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
