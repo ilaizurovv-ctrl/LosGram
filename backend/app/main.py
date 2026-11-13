@@ -722,7 +722,9 @@ def list_messages(conversation_id: int, before_id: int | None = None, limit: int
     rows = db.scalars(query.order_by(Message.id.desc()).limit(min(max(limit, 1), 100))).all()
     rows.reverse()
     return {"items": [{"id": x.id, "conversation_id": x.conversation_id, "sender_id": x.sender_id,
-                       "body": x.body, "created_at": x.created_at.isoformat()} for x in rows]}
+                       "body": ("Сообщение удалено" if x.deleted_at else x.body),
+                       "created_at": x.created_at.isoformat(), "reply_to_id": x.reply_to_id,
+                       "edited": x.edited_at is not None, "deleted": x.deleted_at is not None} for x in rows]}
 
 
 @app.post("/conversations/{conversation_id}/messages")
@@ -730,7 +732,12 @@ async def send_message(conversation_id: int, payload: MessageRequest,
                        db: Session = Depends(get_db), user: User = Depends(current_user)):
     if not participant(db, conversation_id, user.id):
         raise HTTPException(status_code=403, detail="Нет доступа к чату")
-    message = Message(conversation_id=conversation_id, sender_id=user.id, body=payload.body)
+    if payload.reply_to_id is not None:
+        parent = db.get(Message, payload.reply_to_id)
+        if not parent or parent.conversation_id != conversation_id or parent.deleted_at:
+            raise HTTPException(status_code=400, detail="Нельзя ответить на это сообщение")
+    message = Message(conversation_id=conversation_id, sender_id=user.id, body=payload.body,
+                      reply_to_id=payload.reply_to_id)
     db.add(message)
     db.commit()
     db.refresh(message)
@@ -740,6 +747,39 @@ async def send_message(conversation_id: int, payload: MessageRequest,
     for member_id in members:
         await hub.send_to_user(member_id, data)
     return data
+
+
+@app.patch("/conversations/{conversation_id}/messages/{message_id}")
+def edit_message(conversation_id: int, message_id: int, payload: MessageEditRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    message = db.get(Message, message_id)
+    if not message or message.conversation_id != conversation_id:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if message.sender_id != user.id:
+        raise HTTPException(status_code=403, detail="Можно изменять только свои сообщения")
+    if message.deleted_at:
+        raise HTTPException(status_code=400, detail="Сообщение уже удалено")
+    message.body = payload.body
+    message.edited_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"id": message.id, "body": message.body, "edited": True}
+
+
+@app.delete("/conversations/{conversation_id}/messages/{message_id}")
+def delete_message(conversation_id: int, message_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if not participant(db, conversation_id, user.id):
+        raise HTTPException(status_code=403, detail="Нет доступа к чату")
+    message = db.get(Message, message_id)
+    if not message or message.conversation_id != conversation_id:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if message.sender_id != user.id:
+        raise HTTPException(status_code=403, detail="Можно удалять только свои сообщения")
+    if not message.deleted_at:
+        message.deleted_at = datetime.now(timezone.utc)
+        message.body = ""
+        db.commit()
+    return {"id": message.id, "deleted": True}
 
 
 @app.websocket("/ws")
