@@ -863,6 +863,33 @@ private fun SettingsDetail(key: String) {
     var folderMode by remember { mutableStateOf(prefs.getString("folder_mode", "Все чаты") ?: "Все чаты") }
     var helpText by remember { mutableStateOf("") }
     var actionMessage by remember { mutableStateOf("") }
+    var accountInfo by remember { mutableStateOf<JSONObject?>(null) }
+    var accountLoading by remember { mutableStateOf(false) }
+    var accountError by remember { mutableStateOf("") }
+    val sessionToken = remember { readToken(context) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(key) {
+        if (key == "LosGram Premium" || key == "Звёзды LosGram") {
+            accountLoading = true
+            accountError = ""
+            try {
+                if (sessionToken.isNullOrBlank()) throw IllegalStateException("Нужно войти в аккаунт заново.")
+                accountInfo = api("/me", sessionToken)
+            } catch (e: Exception) { accountError = e.message ?: "Не удалось загрузить данные аккаунта" }
+            finally { accountLoading = false }
+        }
+    }
+    fun refreshAccount() {
+        scope.launch {
+            accountLoading = true
+            accountError = ""
+            try {
+                if (sessionToken.isNullOrBlank()) throw IllegalStateException("Нужно войти в аккаунт заново.")
+                accountInfo = api("/me", sessionToken)
+            } catch (e: Exception) { accountError = e.message ?: "Не удалось обновить данные" }
+            finally { accountLoading = false }
+        }
+    }
     fun openSystemSettings(action: String) { try { context.startActivity(Intent(action).apply { if (action == android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS) putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName) else data = Uri.parse("package:" + context.packageName) }) } catch (_: Exception) { actionMessage = "Не удалось открыть системные настройки" } }
     Column(Modifier.fillMaxWidth().padding(start = 60.dp, end = 8.dp, bottom = 12.dp)
         .clip(RoundedCornerShape(14.dp)).background(Panel).padding(12.dp)) {
@@ -950,10 +977,53 @@ private fun SettingsDetail(key: String) {
                 color = Muted, fontSize = 13.sp)
             "Аккаунт" -> Text("Изменить имя, username, описание и фото можно во вкладке «Профиль».",
                 color = Muted, fontSize = 13.sp)
-            "LosGram Premium" -> Text("Premium пока начисляется владельцем вручную. Покупка не подключена.",
-                color = Muted, fontSize = 13.sp)
-            "Звёзды LosGram" -> Text("Баланс и ручные начисления доступны владельцу в панели выше.",
-                color = Muted, fontSize = 13.sp)
+            "LosGram Premium" -> {
+                val active = accountInfo?.optBoolean("premium_active", false) == true
+                val until = accountInfo?.optString("premium_until").orEmpty().take(16).replace("T", " ")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("✦", color = Color(0xFFFFD76A), fontSize = 30.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (active) "Premium активен" else "Premium не активен",
+                            color = if (active) Color(0xFFFFD76A) else White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (active && until.isNotBlank()) "Действует до: $until UTC" else "Подписка пока не оформлена",
+                            color = Muted, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Возможности LosGram Premium", color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                listOf("Особая отметка Premium в профиле", "Расширенные возможности аккаунта",
+                    "Дополнительные настройки персонализации").forEach {
+                    Text("• $it", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+                Text("Premium выдаётся владельцем вручную. Покупки и автоматическое продление отключены.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                if (accountLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Blue)
+                if (accountError.isNotBlank()) Text(accountError, color = Color(0xFFFF8888), fontSize = 12.sp)
+                OutlinedButton(onClick = { refreshAccount() }, enabled = !accountLoading,
+                    modifier = Modifier.fillMaxWidth()) { Text("Обновить статус") }
+            }
+            "Звёзды LosGram" -> {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("⭐", fontSize = 30.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Ваш баланс", color = Muted, fontSize = 12.sp)
+                        Text((accountInfo?.optInt("stars_balance") ?: 0).toString(),
+                            color = Color(0xFFFFD76A), fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text("Звёзды LosGram", color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 12.dp))
+                Text("Звёзды — внутренняя валюта LosGram. Сейчас баланс можно пополнять и корректировать вручную через панель владельца.",
+                    color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
+                Text("Покупка звёзд не подключена. История операций появится после добавления журнала транзакций.",
+                    color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                if (accountLoading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Blue)
+                if (accountError.isNotBlank()) Text(accountError, color = Color(0xFFFF8888), fontSize = 12.sp)
+                OutlinedButton(onClick = { refreshAccount() }, enabled = !accountLoading,
+                    modifier = Modifier.fillMaxWidth()) { Text("Обновить баланс") }
+            }
             "LosGram для бизнеса" -> Text("Данные бизнес-профиля можно изменить во вкладке «Профиль».",
                 color = Muted, fontSize = 13.sp)
             "Отправить подарок" -> Text("Отправка подарков появится после реализации каталога подарков и списания звёзд.",
