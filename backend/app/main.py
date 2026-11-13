@@ -134,6 +134,8 @@ with engine.begin() as connection:
     # Legacy schema may have username NOT NULL, but Telegram users can have no username.
     if engine.dialect.name == "postgresql":
         connection.exec_driver_sql("ALTER TABLE users ALTER COLUMN username DROP NOT NULL")
+        # Telegram-created accounts do not use the legacy password login field.
+        connection.exec_driver_sql("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
     for _column in ("losgram_id", "telegram_user_id", "username", "virtual_number"):
         connection.exec_driver_sql(
             f"CREATE UNIQUE INDEX IF NOT EXISTS ix_users_{_column} ON users ({_column})"
